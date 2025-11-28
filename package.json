@@ -1,5 +1,5 @@
 {
-  "name": "monday",
+  "name": "monday-backup",
   "type": "module",
   "scripts": {
     "seed": "tsx src/script/seed.ts"

@@ -1,10 +1,10 @@
+import 'dotenv/config'
 import fs from 'node:fs/promises'
-import { createWriteStream } from 'node:fs'
 import path from 'node:path'
+import { createWriteStream } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
-import 'dotenv/config'
 
 /* API */
 type GetAllGroupResponse = {
@@ -219,14 +219,14 @@ async function seed() {
                                 created_at: update.created_at,
                                 updated_at: update.updated_at,
                                 createdBy: update.creator.name,
-                                assets: (update.assets || []).map(asset => transformAsset(asset)),
+                                assets: (update.assets).map(asset => transformAsset(asset)),
                                 replies: update.replies.map(reply => ({
                                     replyId: reply.id,
                                     body: reply.body,
                                     createdBy: reply.creator.name,
                                     createdAt: reply.created_at,
                                     updatedAt: reply.updated_at,
-                                    assets: (reply.assets || []).map(asset => transformAsset(asset))
+                                    assets: (reply.assets).map(asset => transformAsset(asset))
                                 }))
                             }))
                         }
