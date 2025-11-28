@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 
+import { getAllAssets } from '../util/data.js'
+
+import type { BoardShape, AssetShape } from '../type/data.js'
+
 /* API */
 type GetAllGroupResponse = {
     boards: {
@@ -91,55 +95,6 @@ type Asset = {
     url: string
 }
 
-/* Data shape */
-type BoardShape = {
-    boardId: string
-    name: string
-    groups: {
-        groupId: string
-        name: string
-        items: {
-            itemId: string
-            title: string
-            createdBy: string
-            createdAt: string
-            updatedAt: string
-            column: {
-                name: string
-                value: string | null
-            }[]
-            assets: AssetShape[]
-            comments: {
-                commentId: string
-                body: string
-                edited_at: string
-                created_at: string
-                updated_at: string
-                createdBy: string
-                assets: AssetShape[]
-                replies: {
-                    replyId: string
-                    body: string
-                    createdBy: string
-                    createdAt: string
-                    updatedAt: string
-                    assets: AssetShape[]
-                }[]
-            }[]
-        }[]
-    }[]
-}
-
-type AssetShape = {
-    assetId: string
-    fileName: string
-    extension: string
-    size: number
-    publicUrl: string
-    url: string
-    createdAt: string
-}
-
 // Environment check
 const MONDAY_API_TOKEN = process.env.MONDAY_API_TOKEN
 const MONDAY_API_URL = 'https://api.monday.com/v2'
@@ -219,14 +174,14 @@ async function seed() {
                                 created_at: update.created_at,
                                 updated_at: update.updated_at,
                                 createdBy: update.creator.name,
-                                assets: (update.assets).map(asset => transformAsset(asset)),
+                                assets: update.assets.map(asset => transformAsset(asset)),
                                 replies: update.replies.map(reply => ({
                                     replyId: reply.id,
                                     body: reply.body,
                                     createdBy: reply.creator.name,
                                     createdAt: reply.created_at,
                                     updatedAt: reply.updated_at,
-                                    assets: (reply.assets).map(asset => transformAsset(asset))
+                                    assets: reply.assets.map(asset => transformAsset(asset))
                                 }))
                             }))
                         }
@@ -245,28 +200,12 @@ async function seed() {
             const assetDir = path.join(DATA_DIR, 'asset', boardId)
             await fs.mkdir(assetDir, { recursive: true })
 
-            const assets: AssetShape[] = []
-            targetBoard.groups.forEach(group => {
-                group.items.forEach(item => {
-                    assets.push(...item.assets)
-
-                    item.comments.forEach(comment => {
-                        assets.push(...comment.assets)
-
-                        comment.replies.forEach(reply => {
-                            assets.push(...reply.assets)
-                        })
-                    })
-                })
-            })
-
-            // Dedup assets by ID
-            const uniqueAssets = [...new Map(assets.map(a => [a.assetId, a])).values()]
-            const totalAssets = uniqueAssets.length
+            const boardAssets = getAllAssets(targetBoard)
+            const totalAssets = boardAssets.length
             
             // Sync assets: Remove local assets that are not in the new list
             const localAssets = await fs.readdir(assetDir).catch(() => [] as string[])
-            const validAssetFilenames = new Set(uniqueAssets.map(a => `${a.assetId}.${a.extension}`))
+            const validAssetFilenames = new Set(boardAssets.map(a => `${a.assetId}.${a.extension}`))
             
             await Promise.all(localAssets.map(async file => {
                 if (!validAssetFilenames.has(file)) {
@@ -279,7 +218,7 @@ async function seed() {
             
             console.log(`    Found ${totalAssets} assets to download.`)
 
-            await processBatch(uniqueAssets, 50, async (asset) => {
+            await processBatch(boardAssets, 50, async (asset) => {
                 const filename = `${asset.assetId}.${asset.extension}`
                 const dest = path.join(assetDir, filename)
                 

@@ -2,7 +2,8 @@
   "name": "monday-backup",
   "type": "module",
   "scripts": {
-    "seed": "tsx src/script/seed.ts"
+    "seed": "tsx src/script/seed.ts",
+    "analyze": "tsx src/script/analyze-assets.ts"
   },
   "packageManager": "pnpm@10.6.4",
   "dependencies": {
