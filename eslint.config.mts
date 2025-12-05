@@ -19,6 +19,22 @@ export default [
             'vue/multi-word-component-names': 'off',
             'vue/no-v-html': 'off',
             'no-undef': 'off', // TypeScript handles this
+            'vue/html-indent': ['error', 4, {
+                attribute: 1,
+                baseIndent: 1,
+                closeBracket: 0,
+                alignAttributesVertically: true,
+            }],
+            'vue/html-closing-bracket-newline': ['error', {
+                singleline: 'never',
+                multiline: 'always',
+            }],
+            'vue/max-attributes-per-line': ['error', {
+                singleline: 3,
+                multiline: 1,
+            }],
+            'vue/singleline-html-element-content-newline': 'off',
+            'vue/multiline-html-element-content-newline': 'off',
         }
     },
     {
