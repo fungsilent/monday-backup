@@ -9,7 +9,7 @@ export function getAllAssets(board: BoardShape): AssetShape[] {
 
             item.comments.forEach(comment => {
                 allAssets.push(...comment.assets)
-                
+
                 comment.replies.forEach(reply => {
                     allAssets.push(...reply.assets)
                 })
