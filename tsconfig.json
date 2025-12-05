@@ -1,14 +1,10 @@
 {
+  "extends": "./.nuxt/tsconfig.json",
   "compilerOptions": {
     "strict": true,
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "lib": ["ES2022", "DOM"],
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true
-  },
-  "include": ["src"],
-  "exclude": ["node_modules"]
+    "paths": {
+      "#root/*": ["./*"],
+      "#src/*": ["./src/*"]
+    }
+  }
 }
