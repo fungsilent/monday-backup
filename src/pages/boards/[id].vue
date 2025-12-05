@@ -43,7 +43,7 @@ const closeModal = () => {
 </script>
 
 <template>
-    <div class="container mx-auto p-4">
+    <div class="mx-auto p-4">
         <div
             v-if="pending"
             class="text-center py-10"
@@ -97,7 +97,7 @@ const closeModal = () => {
                             <table class="w-full text-left border-collapse">
                                 <thead>
                                     <tr class="bg-gray-50 border-b text-xs text-gray-500 uppercase">
-                                        <th class="px-4 py-3 font-medium">
+                                        <th class="px-4 py-3 font-medium sticky left-0 z-10 bg-gray-50">
                                             Item
                                         </th>
                                         <th
@@ -113,10 +113,10 @@ const closeModal = () => {
                                     <tr
                                         v-for="item in group.items"
                                         :key="item.itemId"
-                                        class="hover:bg-blue-50 cursor-pointer transition-colors text-sm"
+                                        class="group/row hover:bg-blue-50 cursor-pointer transition-colors text-sm"
                                         @click="openItemModal(item)"
                                     >
-                                        <td class="px-4 py-3 font-medium text-gray-900 min-w-[200px] border-r">
+                                        <td class="px-4 py-3 font-medium text-gray-900 min-w-[500px] sticky left-0 z-10 bg-white group-hover/row:bg-blue-50 transition-colors shadow-[inset_-1px_0_0_0_#e5e7eb]">
                                             {{ item.title }}
                                         </td>
                                         <td

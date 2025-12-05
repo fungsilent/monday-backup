@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue'
 import type { ItemShape } from '#src/type/data'
 
 defineProps<{
@@ -8,15 +9,35 @@ defineProps<{
 const emit = defineEmits<{
     (e: 'close'): void
 }>()
+
+onMounted(() => {
+    document.body.style.overflow = 'hidden'
+})
+
+onUnmounted(() => {
+    document.body.style.overflow = ''
+})
+
+const handleBodyClick = (event: MouseEvent) => {
+    const target = event.target as HTMLElement
+    if (target.tagName === 'IMG') {
+        const img = target as HTMLImageElement
+        if (img.src) {
+            event.preventDefault()
+            event.stopPropagation()
+            window.open(img.src, '_blank')
+        }
+    }
+}
 </script>
 
 <template>
     <Teleport to="body">
         <div
-            class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-6 py-4 z-50"
+            class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-12 py-4 z-50"
             @click.self="emit('close')"
         >
-            <div class="bg-white rounded-xl shadow-2xl w-full max-w-[1600px] h-[90vh] flex flex-col overflow-hidden">
+            <div class="bg-white rounded-xl shadow-2xl w-full h-[90vh] flex flex-col overflow-hidden">
                 <!-- Header -->
                 <div class="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
                     <div>
@@ -144,6 +165,7 @@ const emit = defineEmits<{
                                         </div>
                                         <div
                                             class="prose prose-sm max-w-none text-gray-800"
+                                            @click="handleBodyClick"
                                             v-html="comment.formattedBody"
                                         />
 
@@ -186,6 +208,7 @@ const emit = defineEmits<{
                                                 </div>
                                                 <div
                                                     class="text-sm text-gray-700"
+                                                    @click="handleBodyClick"
                                                     v-html="reply.formattedBody"
                                                 />
 
@@ -230,6 +253,13 @@ const emit = defineEmits<{
     list-style-type: decimal;
     padding-left: 1.5em;
     margin-bottom: 0.5em;
+}
+.prose a:not([data-body-type="asset"]) {
+    color: #007bff;
+    text-decoration: underline;
+}
+.prose img {
+    cursor: pointer;
 }
 .prose [data-body-type="user-mention"] {
     color: #007bff;
