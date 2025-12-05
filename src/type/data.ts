@@ -1,13 +1,4 @@
-export type AssetShape = {
-    assetId: string
-    fileName: string
-    extension: string
-    size: number
-    publicUrl: string
-    url: string
-    createdAt: string
-}
-
+/* Data shape */
 export type BoardShape = {
     boardId: string
     name: string
@@ -28,6 +19,7 @@ export type BoardShape = {
             comments: {
                 commentId: string
                 body: string
+                formattedBody: string
                 edited_at: string
                 created_at: string
                 updated_at: string
@@ -36,6 +28,7 @@ export type BoardShape = {
                 replies: {
                     replyId: string
                     body: string
+                    formattedBody: string
                     createdBy: string
                     createdAt: string
                     updatedAt: string
@@ -45,3 +38,19 @@ export type BoardShape = {
         }[]
     }[]
 }
+
+export type AssetShape = {
+    assetId: string
+    fileName: string
+    extension: string
+    size: number
+    publicUrl: string
+    url: string
+    localUrl: string
+    createdAt: string
+}
+
+export type GroupShape = BoardShape['groups'][number]
+export type ItemShape = GroupShape['items'][number]
+export type CommentShape = ItemShape['comments'][number]
+export type ReplyShape = CommentShape['replies'][number]

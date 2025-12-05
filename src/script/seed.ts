@@ -5,12 +5,19 @@ import { createWriteStream } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
+import { formatInTimeZone } from 'date-fns-tz'
 
-import { getAllAssets } from '../util/data.js'
+import { getAllAssets } from '#src/util/data'
 
-import type { BoardShape, AssetShape } from '../type/data.js'
+import type { ReadableStream } from 'node:stream/web'
+import type { BoardShape, AssetShape, ItemShape, CommentShape, ReplyShape } from '#src/type/data'
 
 /* API */
+type GraphQLResponse<T> = {
+    data: T
+    errors?: unknown[]
+}
+
 type GetAllGroupResponse = {
     boards: {
         id: string
@@ -75,10 +82,11 @@ type GetBoardItemsResponse = {
     }[]
 }
 
-type GraphQLResponse<T> = {
-    data: T
-    errors?: any[]
-}
+type Board = GetBoardItemsResponse['boards'][number]
+type Group = Board['groups'][number]
+type Item = Group['items_page']['items'][number]
+type Comment = Item['updates'][number]
+type Reply = Comment['replies'][number]
 
 type Creator = {
     id: string
@@ -96,17 +104,15 @@ type Asset = {
 }
 
 // Environment check
-const MONDAY_API_TOKEN = process.env.MONDAY_API_TOKEN
-const MONDAY_API_URL = 'https://api.monday.com/v2'
-
-if (!MONDAY_API_TOKEN) {
-    console.error('Error: MONDAY_API_TOKEN environment variable is not set.')
-    process.exit(1)
-}
-
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const DATA_DIR = path.join(__dirname, '../data')
+
+const config = {
+    MONDAY_API_TOKEN: process.env.MONDAY_API_TOKEN,
+    MONDAY_API_URL: 'https://api.monday.com/v2',
+    DATA_DIR: path.join(__dirname, '../../public'), // #root/public
+    downloadAsset: true,
+}
 
 const boardIds = [
     '8871724565',
@@ -115,15 +121,21 @@ const boardIds = [
 seed()
 
 async function seed() {
+    // Environment check
+    if (!config.MONDAY_API_TOKEN) {
+        console.error('Error: MONDAY_API_TOKEN environment variable is not set.')
+        process.exit(1)
+    }
+
     console.log('Starting seed script...')
-    
+
     // Clean data directory
     await cleanDataDir()
 
     // Loop boards
     for (const boardId of boardIds) {
         console.log(`Processing board: ${boardId}`)
-        
+
         try {
             // Fetch board groups
             const boardInfo = await getBoardGroups(boardId)
@@ -140,9 +152,9 @@ async function seed() {
 
             // Loop groups
             for (const group of boardInfo.groups) {
-                console.log(`  Processing group: ${group.title} (${group.id})`)
-                
-                const allItems: GetBoardItemsResponse['boards'][number]['groups'][number]['items_page']['items'] = []
+                console.log(`─ Processing group: ${group.title} (${group.id})`)
+
+                const allItems: Item[] = []
                 let cursor: string | null = null
 
                 do {
@@ -162,26 +174,25 @@ async function seed() {
                             createdBy: item.creator.name,
                             createdAt: item.created_at,
                             updatedAt: item.updated_at,
-                            column: item.column_values.map(cv => ({
-                                name: cv.column.title,
-                                value: cv.text
-                            })),
-                            assets: item.assets.map(asset => transformAsset(asset)),
+                            column: transformColumnValue(item.column_values),
+                            assets: item.assets.map(asset => transformAsset(boardId, asset)),
                             comments: item.updates.map(update => ({
                                 commentId: update.id,
                                 body: update.body,
+                                formattedBody: transformBody(boardId, update),
                                 edited_at: update.edited_at,
                                 created_at: update.created_at,
                                 updated_at: update.updated_at,
                                 createdBy: update.creator.name,
-                                assets: update.assets.map(asset => transformAsset(asset)),
+                                assets: update.assets.map(asset => transformAsset(boardId, asset)),
                                 replies: update.replies.map(reply => ({
                                     replyId: reply.id,
                                     body: reply.body,
+                                    formattedBody: transformBody(boardId, reply),
                                     createdBy: reply.creator.name,
                                     createdAt: reply.created_at,
                                     updatedAt: reply.updated_at,
-                                    assets: reply.assets.map(asset => transformAsset(asset))
+                                    assets: reply.assets.map(asset => transformAsset(boardId, asset))
                                 }))
                             }))
                         }
@@ -191,59 +202,67 @@ async function seed() {
 
             // Create JSON file
             const fileName = `${boardId}.json`
-            const filePath = path.join(DATA_DIR, fileName)
+            const boardDir = path.join(config.DATA_DIR, 'board')
+            await fs.mkdir(boardDir, { recursive: true })
+            const filePath = path.join(boardDir, fileName)
             await fs.writeFile(filePath, JSON.stringify(targetBoard, null, 4))
-            console.log(`  Saved to ${fileName}`)
+            console.log(`─ Saved to ${filePath}`)
+
+            if (!config.downloadAsset) {
+                // Skip asset download
+                continue
+            }
 
             // Download assets
-            console.log(`  Downloading assets for board ${boardId}...`)
-            const assetDir = path.join(DATA_DIR, 'asset', boardId)
+            console.log(`─ Downloading assets for board ${boardId}...`)
+            const assetDir = path.join(config.DATA_DIR, 'asset', boardId)
             await fs.mkdir(assetDir, { recursive: true })
 
             const boardAssets = getAllAssets(targetBoard)
             const totalAssets = boardAssets.length
-            
+
             // Sync assets: Remove local assets that are not in the new list
             const localAssets = await fs.readdir(assetDir).catch(() => [] as string[])
-            const validAssetFilenames = new Set(boardAssets.map(a => `${a.assetId}.${a.extension}`))
-            
+            const validAssetFilenames = new Set(boardAssets.map(asset => assetFileName(asset)))
+            const deletedFiles = new Set<string>()
+
             await Promise.all(localAssets.map(async file => {
                 if (!validAssetFilenames.has(file)) {
                     await fs.unlink(path.join(assetDir, file))
-                    console.log(`    Deleted obsolete asset: ${file}`)
+                    console.log(`─── Deleted obsolete asset: ${file}`)
+                    deletedFiles.add(file)
                 }
             }))
 
+            const existingFiles = new Set(localAssets.filter(file => !deletedFiles.has(file)))
+            const assetsToDownload = boardAssets.filter(asset => !existingFiles.has(assetFileName(asset)))
+
+            const existingCount = totalAssets - assetsToDownload.length
+            const toBeDownloadedCount = assetsToDownload.length
+
+            console.log(`─── Found ${totalAssets} assets.`)
+            console.log(`─── Existing: ${existingCount} (skipping)`)
+            console.log(`─── To download: ${toBeDownloadedCount}`)
+
             let downloadedCount = 0
-            
-            console.log(`    Found ${totalAssets} assets to download.`)
 
-            await processBatch(boardAssets, 50, async (asset) => {
-                const filename = `${asset.assetId}.${asset.extension}`
-                const dest = path.join(assetDir, filename)
-                
-                // Check if exists
-                const exists = await fs.access(dest).then(() => true).catch(() => false)
-                
-                if (exists) {
-                     // File exists, skip download
-                     downloadedCount++
-                     return
-                }
+            if (toBeDownloadedCount > 0) {
+                await processBatch(assetsToDownload, 50, async asset => {
+                    const filename = assetFileName(asset)
+                    const dest = path.join(assetDir, filename)
 
-                // File doesn't exist, download
-                try {
-                    await downloadFile(asset.publicUrl, dest)
-                    downloadedCount++
-                    process.stdout.write(`\r    Progress: ${downloadedCount}/${totalAssets} (${Math.round(downloadedCount / totalAssets * 100)}%)`)
-                } catch (err) {
-                    console.error(`\n    Failed to download asset ${asset.assetId} (${asset.fileName}):`, err)
-                }
-            })
-            
-            process.stdout.write('\n') // New line after progress bar
-            console.log(`  Assets downloaded to ${assetDir}`)
+                    try {
+                        await downloadFile(asset.publicUrl, dest)
+                        downloadedCount++
+                        process.stdout.write(`\r─── Progress: ${downloadedCount}/${toBeDownloadedCount} (${Math.round(downloadedCount / toBeDownloadedCount * 100)}%)`)
+                    } catch (err) {
+                        console.error(`\n─── Failed to download asset ${asset.assetId} (${asset.fileName}):`, err)
+                    }
+                })
+                process.stdout.write('\n') // New line after progress bar
+            }
 
+            console.log(`─ Assets downloaded to ${assetDir}`)
         } catch (error) {
             console.error(`Error processing board ${boardId}:`, error)
         }
@@ -261,15 +280,15 @@ async function processBatch<T>(items: T[], batchSize: number, task: (item: T) =>
 
 async function cleanDataDir() {
     try {
-        await fs.mkdir(DATA_DIR, { recursive: true })
-        const files = await fs.readdir(DATA_DIR)
+        await fs.mkdir(config.DATA_DIR, { recursive: true })
+        const files = await fs.readdir(config.DATA_DIR)
         for (const file of files) {
-            const isBoardJson = boardIds.some(id => file === `${id}.json`)
+            const isBoardDir = file === 'board'
             const isAssetDir = file === 'asset'
-            
-            if (!isBoardJson && !isAssetDir) {
+
+            if (!isBoardDir && !isAssetDir) {
                 console.log(`Deleted: ${file}`)
-                await fs.rm(path.join(DATA_DIR, file), { recursive: true, force: true })
+                await fs.rm(path.join(config.DATA_DIR, file), { recursive: true, force: true })
             }
         }
     } catch (error) {
@@ -278,16 +297,82 @@ async function cleanDataDir() {
     }
 }
 
-async function downloadFile(url: string, destPath: string) {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.statusText}`)
-    if (!res.body) throw new Error(`No body for ${url}`)
+async function downloadFile(publicUrl: Asset['public_url'], destPath: string) {
+    const res = await fetch(publicUrl)
+    if (!res.ok) throw new Error(`Failed to fetch ${publicUrl}: ${res.statusText}`)
+    if (!res.body) throw new Error(`No body for ${publicUrl}`)
 
     const fileStream = createWriteStream(destPath)
-    await pipeline(Readable.fromWeb(res.body as any), fileStream)
+    await pipeline(Readable.fromWeb(res.body as ReadableStream), fileStream)
 }
 
-function transformAsset(asset: Asset): AssetShape {
+/* MARK: Data */
+function assetFileName(asset: Asset | AssetShape): string {
+    return 'assetId' in asset
+        ? `${asset.assetId}${asset.extension}`
+        : `${asset.id}${asset.file_extension}`
+}
+
+function transformBody(
+    boardId: Board['id'],
+    commentOrReply: Comment | Reply,
+): CommentShape['formattedBody'] | ReplyShape['formattedBody'] {
+    let body = commentOrReply.body
+    if (!body) return body
+
+    // Remove <a> tag from user mention
+    const userMentionRegex = new RegExp('<a[^>]*class="[^"]*user_mention_editor[^"]*"[^>]*>(.*?)</a>', 'g')
+    body = body.replace(
+        userMentionRegex,
+        '<span data-body-type="user-mention">$1</span>'
+    )
+
+    commentOrReply.assets.forEach(asset => {
+        // Replace <a> tag with asset ID
+        const { assetId, localUrl } = transformAsset(boardId, asset)
+        const fileRegex = new RegExp(`<a[^>]*data-asset_id="${assetId}"[^>]*>(.*?)</a>`, 'g')
+        body = body.replace(
+            fileRegex,
+            '<a href="$1" download="$2" data-body-type="asset">$1</a>'
+        )
+
+        // Replace <img> tag with asset ID
+        const imageRegex = new RegExp(`<img[^>]*data-asset_id="${assetId}"[^>]*>`, 'g')
+        body = body.replace(
+            imageRegex,
+            `<img src="${localUrl}">`
+        )
+    })
+
+
+
+    return body
+}
+
+function transformColumnValue(columnValues: Item['column_values']): ItemShape['column'] {
+    return columnValues.map(column => {
+        const name = column.column.title
+        let value = column.text
+
+        if (value) {
+            switch (name) {
+                case 'Last Updated':
+                case 'Creation Log': {
+                    const date = new Date(value)
+                    value = formatInTimeZone(date, 'Asia/Hong_Kong', 'yyyy-MM-dd HH:mm:ss')
+                    break
+                }
+            }
+        }
+
+        return {
+            name: column.column.title,
+            value: value
+        }
+    })
+}
+
+function transformAsset(boardId: Board['id'], asset: Asset): AssetShape {
     return {
         assetId: asset.id,
         fileName: asset.name,
@@ -295,16 +380,18 @@ function transformAsset(asset: Asset): AssetShape {
         size: asset.file_size,
         publicUrl: asset.public_url,
         url: asset.url,
+        localUrl: `/asset/${boardId}/${assetFileName(asset)}`,
         createdAt: asset.created_at
     }
 }
 
-async function fetchGraphQL<T>(query: string, variables: Record<string, any> = {}): Promise<T> {
-    const response = await fetch(MONDAY_API_URL, {
+/* MARK: GraphQL */
+async function fetchGraphQL<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    const response = await fetch(config.MONDAY_API_URL, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': MONDAY_API_TOKEN!
+            'Authorization': config.MONDAY_API_TOKEN!
         },
         body: JSON.stringify({ query, variables })
     })
@@ -320,7 +407,7 @@ async function fetchGraphQL<T>(query: string, variables: Record<string, any> = {
     return json.data
 }
 
-async function getBoardGroups(boardId: string): Promise<GetAllGroupResponse['boards'][number]> {
+async function getBoardGroups(boardId: Board['id']): Promise<GetAllGroupResponse['boards'][number]> {
     const query = `
         query ($boardIds: [ID!]) {
             boards(ids: $boardIds) {
@@ -334,21 +421,26 @@ async function getBoardGroups(boardId: string): Promise<GetAllGroupResponse['boa
         }
     `
     const data = await fetchGraphQL<GetAllGroupResponse>(query, { boardIds: [boardId] })
-    return data.boards[0]
+    const board = data.boards?.[0]
+    if (!board) {
+        throw new Error(`Board ${boardId} not found.`)
+    }
+    return board
 }
 
 async function getBoardGroupItems(
-    boardId: string,
-    groupId: string,
-    cursor: string | null = null
-): Promise<GetBoardItemsResponse['boards'][number]['groups'][number]> {
+    boardId: Board['id'],
+    groupId: Group['id'],
+    cursor: Group['items_page']['cursor'] | null = null
+): Promise<Group> {
+    const limit = 100
     const query = `
         query ($boardIds: [ID!], $groupIds: [String!], $cursor: String) {
             boards(ids: $boardIds) {
                 groups(ids: $groupIds) {
                     id
                     title
-                    items_page(limit: 100, cursor: $cursor) {
+                    items_page(limit: ${limit}, cursor: $cursor) {
                         cursor
                         items {
                             id
@@ -428,5 +520,9 @@ async function getBoardGroupItems(
         }
     `
     const data = await fetchGraphQL<GetBoardItemsResponse>(query, { boardIds: [boardId], groupIds: [groupId], cursor })
-    return data.boards[0].groups[0]
+    const groups = data.boards?.[0]?.groups?.[0]
+    if (!groups) {
+        throw new Error(`Group ${groupId} not found.`)
+    }
+    return groups
 }

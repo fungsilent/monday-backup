@@ -2,12 +2,14 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import type { BoardShape, AssetShape } from '../type/data.js'
+import type { BoardShape } from '../type/data.js'
 import { getAllAssets } from '../util/data.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const DATA_DIR = path.join(__dirname, '../data')
+
+analyze()
 
 async function analyze() {
     try {
@@ -29,7 +31,7 @@ async function analyze() {
 
             const boardAssets = getAllAssets(board)
             const totalSize = boardAssets.reduce((sum, asset) => sum + asset.size, 0)
-            
+
             console.log(`Total Assets: ${boardAssets.length}`)
             console.log(`Total Size: ${formatBytes(totalSize)}`)
             console.log('-'.repeat(30))
@@ -69,6 +71,3 @@ function formatBytes(bytes: number, decimals = 2) {
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`
 }
-
-analyze()
-
