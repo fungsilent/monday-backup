@@ -115,7 +115,7 @@ const config = {
 }
 
 const boardIds = [
-    '8871724565',
+    '8871724565', // 2026 DSE - UAT Issue Log
 ]
 
 seed()
@@ -328,7 +328,7 @@ function transformBody(
     )
 
     commentOrReply.assets.forEach(asset => {
-        // Replace <a> tag with asset ID
+        // Replace <a> tag by asset ID
         const { assetId, localUrl } = transformAsset(boardId, asset)
         const fileRegex = new RegExp(`<a[^>]*data-asset_id="${assetId}"[^>]*>(.*?)</a>`, 'g')
         body = body.replace(
@@ -336,15 +336,13 @@ function transformBody(
             '<a href="$1" download="$2" data-body-type="asset">$1</a>'
         )
 
-        // Replace <img> tag with asset ID
+        // Replace <img> tag by asset ID
         const imageRegex = new RegExp(`<img[^>]*data-asset_id="${assetId}"[^>]*>`, 'g')
         body = body.replace(
             imageRegex,
             `<img src="${localUrl}">`
         )
     })
-
-
 
     return body
 }

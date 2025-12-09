@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+// TODO: remove this API, directly read the file from public/board/{board-id}.json
 export default defineEventHandler(async event => {
     const id = getRouterParam(event, 'id')
     const dataDir = path.join(process.cwd(), 'public/board')

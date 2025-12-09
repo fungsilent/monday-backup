@@ -9,6 +9,7 @@ export default defineEventHandler(async () => {
         const boardFiles = files.filter(f => f.endsWith('.json'))
 
         const boards = await Promise.all(boardFiles.map(async f => {
+            // TODO: read title and boardId only from the file
             const content = await fs.readFile(path.join(dataDir, f), 'utf-8')
             return JSON.parse(content)
         }))
