@@ -39,3 +39,9 @@ The main source code is located in the `src/` directory:
 pnpm dev
 ```
 The service will start at `http://localhost:3000`.
+
+### Start Production in Server
+install pm2 by `pnpm add -g pm2`
+```
+pm2 start ecosystem.config.js
+```
