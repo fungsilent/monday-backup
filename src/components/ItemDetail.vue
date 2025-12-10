@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
+import { formatInTimeZone } from 'date-fns-tz'
+
 import type { ItemShape } from '#src/type/data'
 
 defineProps<{
@@ -9,6 +11,11 @@ defineProps<{
 const emit = defineEmits<{
     (e: 'close'): void
 }>()
+
+const formatDate = (dateInput: string, formatPattern = 'yyyy-MM-dd HH:mm') => {
+    const date = new Date(dateInput)
+    return formatInTimeZone(date, 'Asia/Hong_Kong', formatPattern)
+}
 
 onMounted(() => {
     document.body.style.overflow = 'hidden'
@@ -45,7 +52,7 @@ const handleBodyClick = (event: MouseEvent) => {
                             {{ item.title }}
                         </h2>
                         <div class="text-xs text-gray-500 mt-1">
-                            Created by {{ item.createdBy }} on {{ item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '' }}
+                            Created by {{ item.createdBy }} on {{ formatDate(item.createdAt, 'yyyy-MM-dd') }}
                         </div>
                     </div>
                     <button
@@ -161,7 +168,7 @@ const handleBodyClick = (event: MouseEvent) => {
                                     <div class="bg-gray-50 rounded-lg p-4 border relative group-hover:shadow-md transition-shadow">
                                         <div class="flex justify-between items-start mb-2">
                                             <span class="font-bold text-gray-900">{{ comment.createdBy }}</span>
-                                            <span class="text-xs text-gray-500">{{ new Date(comment.created_at).toLocaleString() }}</span>
+                                            <span class="text-xs text-gray-500">{{ formatDate(comment.created_at) }}</span>
                                         </div>
                                         <div
                                             class="prose prose-sm max-w-none text-gray-800"
@@ -204,7 +211,7 @@ const handleBodyClick = (event: MouseEvent) => {
                                             <div class="flex-grow bg-white p-3 rounded border shadow-sm">
                                                 <div class="flex justify-between items-start mb-1">
                                                     <span class="font-bold text-gray-800 text-sm">{{ reply.createdBy }}</span>
-                                                    <span class="text-xs text-gray-400">{{ new Date(reply.createdAt).toLocaleString() }}</span>
+                                                    <span class="text-xs text-gray-400">{{ formatDate(reply.createdAt) }}</span>
                                                 </div>
                                                 <div
                                                     class="text-sm text-gray-700"

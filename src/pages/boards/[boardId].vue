@@ -4,7 +4,7 @@ import ItemDetail from '#root/src/components/ItemDetail.vue'
 import type { BoardShape, ItemShape } from '#src/type/data'
 
 const route = useRoute()
-const boardId = route.params.id as string
+const boardId = route.params.boardId as string
 
 const { data: board, pending, error } = await useFetch<BoardShape>(`/api/boards/${boardId}`)
 
@@ -33,7 +33,6 @@ const filteredGroups = computed(() => {
 })
 
 const openItemModal = (item: ItemShape) => {
-    console.log('openItemModal', item)
     selectedItem.value = item
 }
 

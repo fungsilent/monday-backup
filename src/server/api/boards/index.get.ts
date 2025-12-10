@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+import { dataDirName } from '#root/config'
+
 export default defineEventHandler(async () => {
-    const dataDir = path.join(process.cwd(), 'public/board')
+    const dataDir = path.join(process.cwd(), `${dataDirName}/board`)
 
     try {
         const files = await fs.readdir(dataDir)
