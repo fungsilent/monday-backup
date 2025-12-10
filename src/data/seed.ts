@@ -113,7 +113,7 @@ const config = {
     mondayApiToken: process.env.MONDAY_API_TOKEN,
     mondayApiUrl: 'https://api.monday.com/v2',
     dataDir: path.join(__dirname, `../../${dataDirName}`), // #root/{dataDirName}
-    downloadAsset: false,
+    downloadAsset: true,
     boardIds: selectSeedBoardIds(false),
 }
 
