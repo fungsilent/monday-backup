@@ -114,7 +114,7 @@ const config = {
     mondayApiUrl: 'https://api.monday.com/v2',
     dataDir: path.join(__dirname, `../../${dataDirName}`), // #root/{dataDirName}
     downloadAsset: false,
-    boardIds: selectSeedBoardIds(true),
+    boardIds: selectSeedBoardIds(false),
 }
 
 /* Main: Seed */
