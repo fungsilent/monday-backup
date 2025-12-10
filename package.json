@@ -4,7 +4,7 @@
   "scripts": {
     "type": "tsc --noEmit",
     "lint": "eslint src --fix",
-    "seed": "tsx src/script/seed.ts",
+    "seed": "tsx src/data/seed.ts",
     "analyze": "tsx src/script/analyze-assets.ts",
     "dev": "nuxt dev",
     "build": "nuxt build",

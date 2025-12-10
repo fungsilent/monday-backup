@@ -1,3 +1,6 @@
+/**
+ * This is the configuration file for pm2 to start the production server
+ */
 module.exports = {
     apps: [
         {

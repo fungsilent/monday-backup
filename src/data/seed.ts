@@ -7,7 +7,9 @@ import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { formatInTimeZone } from 'date-fns-tz'
 
+import { dataDirName } from '#root/config'
 import { getAllAssets } from '#src/util/data'
+import { seedBoardIds } from '#src/data/board'
 
 import type { ReadableStream } from 'node:stream/web'
 import type { BoardShape, AssetShape, ItemShape, CommentShape, ReplyShape } from '#src/type/data'
@@ -108,21 +110,19 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const config = {
-    MONDAY_API_TOKEN: process.env.MONDAY_API_TOKEN,
-    MONDAY_API_URL: 'https://api.monday.com/v2',
-    DATA_DIR: path.join(__dirname, '../../public'), // #root/public
-    downloadAsset: true,
+    mondayApiToken: process.env.MONDAY_API_TOKEN,
+    mondayApiUrl: 'https://api.monday.com/v2',
+    dataDir: path.join(__dirname, `../../${dataDirName}`), // #root/{dataDirName}
+    downloadAsset: false,
+    boardIds: selectSeedBoardIds(true),
 }
 
-const boardIds = [
-    '8871724565', // 2026 DSE - UAT Issue Log
-]
-
+/* Main: Seed */
 seed()
 
 async function seed() {
     // Environment check
-    if (!config.MONDAY_API_TOKEN) {
+    if (!config.mondayApiToken) {
         console.error('Error: MONDAY_API_TOKEN environment variable is not set.')
         process.exit(1)
     }
@@ -133,7 +133,7 @@ async function seed() {
     await cleanDataDir()
 
     // Loop boards
-    for (const boardId of boardIds) {
+    for (const boardId of config.boardIds) {
         console.log(`Processing board: ${boardId}`)
 
         try {
@@ -202,7 +202,7 @@ async function seed() {
 
             // Create JSON file
             const fileName = `${boardId}.json`
-            const boardDir = path.join(config.DATA_DIR, 'board')
+            const boardDir = path.join(config.dataDir, 'board')
             await fs.mkdir(boardDir, { recursive: true })
             const filePath = path.join(boardDir, fileName)
             await fs.writeFile(filePath, JSON.stringify(targetBoard, null, 4))
@@ -215,7 +215,7 @@ async function seed() {
 
             // Download assets
             console.log(`─ Downloading assets for board ${boardId}...`)
-            const assetDir = path.join(config.DATA_DIR, 'asset', boardId)
+            const assetDir = path.join(config.dataDir, 'asset', boardId)
             await fs.mkdir(assetDir, { recursive: true })
 
             const boardAssets = getAllAssets(targetBoard)
@@ -280,15 +280,15 @@ async function processBatch<T>(items: T[], batchSize: number, task: (item: T) =>
 
 async function cleanDataDir() {
     try {
-        await fs.mkdir(config.DATA_DIR, { recursive: true })
-        const files = await fs.readdir(config.DATA_DIR)
+        await fs.mkdir(config.dataDir, { recursive: true })
+        const files = await fs.readdir(config.dataDir)
         for (const file of files) {
             const isBoardDir = file === 'board'
             const isAssetDir = file === 'asset'
 
             if (!isBoardDir && !isAssetDir) {
                 console.log(`Deleted: ${file}`)
-                await fs.rm(path.join(config.DATA_DIR, file), { recursive: true, force: true })
+                await fs.rm(path.join(config.dataDir, file), { recursive: true, force: true })
             }
         }
     } catch (error) {
@@ -331,9 +331,10 @@ function transformBody(
         // Replace <a> tag by asset ID
         const { assetId, localUrl } = transformAsset(boardId, asset)
         const fileRegex = new RegExp(`<a[^>]*data-asset_id="${assetId}"[^>]*>(.*?)</a>`, 'g')
+        const downloadName = `${asset.name}${asset.file_extension}`
         body = body.replace(
             fileRegex,
-            '<a href="$1" download="$2" data-body-type="asset">$1</a>'
+            `<a href="${localUrl}" download="${downloadName}" data-body-type="asset">${asset.name}</a>`
         )
 
         // Replace <img> tag by asset ID
@@ -385,11 +386,11 @@ function transformAsset(boardId: Board['id'], asset: Asset): AssetShape {
 
 /* MARK: GraphQL */
 async function fetchGraphQL<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-    const response = await fetch(config.MONDAY_API_URL, {
+    const response = await fetch(config.mondayApiUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': config.MONDAY_API_TOKEN!
+            'Authorization': config.mondayApiToken!
         },
         body: JSON.stringify({ query, variables })
     })
@@ -523,4 +524,10 @@ async function getBoardGroupItems(
         throw new Error(`Group ${groupId} not found.`)
     }
     return groups
+}
+
+/* Utils */
+function selectSeedBoardIds(dev: boolean): Board['id'][] {
+    const seedData = dev ? seedBoardIds.dev : seedBoardIds.prod
+    return Object.values(seedData).flatMap(boardIds => boardIds)
 }
