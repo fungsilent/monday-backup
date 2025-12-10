@@ -1,10 +1,12 @@
 {
   "extends": "./.nuxt/tsconfig.json",
+  "esModuleInterop": true,
+  "downlevelIteration": true,
   "compilerOptions": {
     "strict": true,
     "paths": {
       "#root/*": ["./*"],
       "#src/*": ["./src/*"]
     }
-  }
+  },
 }
