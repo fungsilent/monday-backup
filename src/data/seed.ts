@@ -5,6 +5,7 @@ import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { formatInTimeZone } from 'date-fns-tz'
 
+import { downloadAsset } from '#root/config'
 import { seedBoardIds } from '#src/data/board'
 import { joinDataDir } from '#src/util/path'
 import { getAllAssets } from '#src/util/data'
@@ -29,12 +30,8 @@ import type {
     BaseItem,
 } from '#src/data/fetch'
 
-// Environment check
-const config = {
-    dataDir: joinDataDir(),
-    downloadAsset: false,
-    boardIds: selectSeedBoardIds(),
-}
+const seedData = isDev() ? seedBoardIds.dev : seedBoardIds.prod
+const allBoardIds = Object.values(seedData).flatMap(boardIds => boardIds)
 
 /* Main: Seed */
 seed()
@@ -50,7 +47,7 @@ async function seed() {
     await setupDataDir()
 
     // Loop boards
-    for (const boardId of config.boardIds) {
+    for (const boardId of allBoardIds) {
         console.log(`Processing board: ${boardId}`)
 
         try {
@@ -95,7 +92,7 @@ async function seed() {
 
             await createJsonFile(targetBoard)
 
-            if (!config.downloadAsset) {
+            if (!downloadAsset) {
                 // Skip asset download
                 continue
             }
@@ -124,7 +121,7 @@ async function setupDataDir() {
             const boardId = jsonFile.split('.')[0]
             if (
                 !boardId
-                || !config.boardIds.includes(boardId)
+                || !allBoardIds.includes(boardId)
             ) {
                 console.log(`─ Deleted: ${jsonFile}`)
                 await fs.rm(joinDataDir('board', jsonFile), { recursive: true, force: true })
@@ -322,11 +319,6 @@ function transformAsset(boardId: Board['id'], asset: Asset): AssetShape {
 }
 
 /* Utils */
-function selectSeedBoardIds(): Board['id'][] {
-    const seedData = isDev() ? seedBoardIds.dev : seedBoardIds.prod
-    return Object.values(seedData).flatMap(boardIds => boardIds)
-}
-
 async function processBatch<T>(items: T[], batchSize: number, task: (item: T) => Promise<void>) {
     for (let i = 0; i < items.length; i += batchSize) {
         const batch = items.slice(i, i + batchSize)
