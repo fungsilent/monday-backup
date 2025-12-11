@@ -317,24 +317,24 @@ function transformBody(
     let body = commentOrReply.body
     if (!body) return body
 
-    // Remove <a> tag from user mention
-    const userMentionRegex = new RegExp('<a[^>]*class="[^"]*user_mention_editor[^"]*"[^>]*>(.*?)</a>', 'g')
+    // Remove <a> tag for user mention
+    const userMentionRegex = new RegExp('<a[^>]*data-mention-id="[^"]*"[^>]*>(.*?)</a>', 'g')
     body = body.replace(
         userMentionRegex,
         '<span data-body-type="user-mention">$1</span>'
     )
 
     commentOrReply.assets.forEach(asset => {
-        // Replace <a> tag by asset ID
-        const { assetId, localUrl } = transformAsset(boardId, asset)
-        const fileRegex = new RegExp(`<a[^>]*data-asset_id="${assetId}"[^>]*>(.*?)</a>`, 'g')
+        // Replace asset <a> tag link to local file
+        const { assetId, localUrl, url } = transformAsset(boardId, asset)
+        const fileRegex = new RegExp(`<a[^>]*href="${url}"[^>]*>(.*?)</a>`, 'g')
         const downloadName = `${asset.name}${asset.file_extension}`
         body = body.replace(
             fileRegex,
             `<a href="${localUrl}" download="${downloadName}" data-body-type="asset">${asset.name}</a>`
         )
 
-        // Replace <img> tag by asset ID
+        // Replace asset <img> tag to local file
         const imageRegex = new RegExp(`<img[^>]*data-asset_id="${assetId}"[^>]*>`, 'g')
         body = body.replace(
             imageRegex,
