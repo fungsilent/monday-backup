@@ -7,9 +7,9 @@ import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { formatInTimeZone } from 'date-fns-tz'
 
-import { dataDirName } from '#root/config'
-import { getAllAssets } from '#src/util/data'
 import { seedBoardIds } from '#src/data/board'
+import { joinDataDir } from '#src/util/path'
+import { getAllAssets } from '#src/util/data'
 
 import type { ReadableStream } from 'node:stream/web'
 import type { BoardShape, AssetShape, ItemShape, CommentShape, ReplyShape } from '#src/type/data'
@@ -112,7 +112,7 @@ const __dirname = path.dirname(__filename)
 const config = {
     mondayApiToken: process.env.MONDAY_API_TOKEN,
     mondayApiUrl: 'https://api.monday.com/v2',
-    dataDir: path.join(__dirname, `../../${dataDirName}`), // #root/{dataDirName}
+    dataDir: joinDataDir(),
     downloadAsset: true,
     boardIds: selectSeedBoardIds(false),
 }

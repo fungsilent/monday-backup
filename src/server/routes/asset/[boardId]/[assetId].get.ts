@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { dataDirName } from '#root/config'
+import { joinDataDir } from '#src/util/path'
 
 export default defineEventHandler(async event => {
     const boardId = getRouterParam(event, 'boardId')
@@ -14,12 +14,12 @@ export default defineEventHandler(async event => {
         throw createError({ statusCode: 404, statusMessage: 'Asset ID not found' })
     }
 
-    const filePath = path.join(process.cwd(), `${dataDirName}/asset/${boardId}/${assetId}`)
+    const filePath = joinDataDir('asset', boardId, assetId)
     if (!fs.existsSync(filePath)) {
         throw createError({ statusCode: 404, statusMessage: 'Asset not found' })
     }
 
-    const ext = path.extname(filePath).toLowerCase()
+    const ext = path.extname(filePath)
     const mimeTypes: Record<string, string> = {
         '.png': 'image/png',
         '.jpg': 'image/jpeg',

@@ -1,22 +1,18 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
-import { dataDirName } from '#root/config'
 import { getAllAssets } from '#src/util/data'
+import { joinDataDir } from '#src/util/path'
 
 import type { BoardShape } from '#src/type/data'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const dataDirPath = path.join(__dirname, `../../${dataDirName}`)
 
 /* Main: Analyze Assets */
 analyze()
 
 async function analyze() {
     try {
-        const files = await fs.readdir(dataDirPath)
+        const dataDir = joinDataDir()
+        const files = await fs.readdir(dataDir)
         const jsonFiles = files.filter(f => f.endsWith('.json'))
 
         if (jsonFiles.length === 0) {
@@ -25,7 +21,7 @@ async function analyze() {
         }
 
         for (const file of jsonFiles) {
-            const filePath = path.join(dataDirPath, file)
+            const filePath = path.join(dataDir, file)
             const content = await fs.readFile(filePath, 'utf-8')
             const board: BoardShape = JSON.parse(content)
 
