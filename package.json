@@ -4,8 +4,8 @@
   "scripts": {
     "type": "tsc --noEmit",
     "lint": "eslint src --fix",
-    "seed:dev": "NODE_ENV=development tsx src/data/seed.ts",
-    "seed": "NODE_ENV=production tsx src/data/seed.ts",
+    "seed:dev": "cross-env NODE_ENV=development tsx src/data/seed.ts",
+    "seed": "cross-env NODE_ENV=production tsx src/data/seed.ts",
     "analyze": "tsx src/script/analyze-assets.ts",
     "dev": "nuxt dev",
     "build": "nuxt build"
@@ -23,6 +23,7 @@
     "@eslint/js": "^9.39.1",
     "@stylistic/eslint-plugin": "^5.6.1",
     "@types/node": "^24.10.1",
+    "cross-env": "^10.1.0",
     "dotenv": "^17.2.3",
     "eslint": "^9.39.1",
     "eslint-plugin-vue": "^9.32.0",
