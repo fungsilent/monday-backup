@@ -1,6 +1,6 @@
 import type { BoardShape, AssetShape } from '../type/data.js'
 
-export function getAllAssets(board: BoardShape): AssetShape[] {
+export const getAllAssets = (board: BoardShape): AssetShape[] => {
     const allAssets: AssetShape[] = []
 
     board.groups.forEach(group => {

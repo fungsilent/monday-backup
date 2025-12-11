@@ -2,7 +2,6 @@ import 'dotenv/config'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createWriteStream } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { formatInTimeZone } from 'date-fns-tz'
@@ -10,6 +9,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { seedBoardIds } from '#src/data/board'
 import { joinDataDir } from '#src/util/path'
 import { getAllAssets } from '#src/util/data'
+import { isDev } from '#src/util/env'
 
 import type { ReadableStream } from 'node:stream/web'
 import type { BoardShape, AssetShape, ItemShape, CommentShape, ReplyShape } from '#src/type/data'
@@ -106,15 +106,12 @@ type Asset = {
 }
 
 // Environment check
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
 const config = {
     mondayApiToken: process.env.MONDAY_API_TOKEN,
     mondayApiUrl: 'https://api.monday.com/v2',
     dataDir: joinDataDir(),
     downloadAsset: true,
-    boardIds: selectSeedBoardIds(false),
+    boardIds: selectSeedBoardIds(),
 }
 
 /* Main: Seed */
@@ -527,7 +524,7 @@ async function getBoardGroupItems(
 }
 
 /* Utils */
-function selectSeedBoardIds(dev: boolean): Board['id'][] {
-    const seedData = dev ? seedBoardIds.dev : seedBoardIds.prod
+function selectSeedBoardIds(): Board['id'][] {
+    const seedData = isDev() ? seedBoardIds.dev : seedBoardIds.prod
     return Object.values(seedData).flatMap(boardIds => boardIds)
 }

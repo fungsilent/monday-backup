@@ -50,6 +50,10 @@ export type AssetShape = {
     createdAt: string
 }
 
+export type WorkspaceShape = {
+    name: BoardShape['name']
+    boards: Pick<BoardShape, 'boardId' | 'name'>[]
+}
 export type GroupShape = BoardShape['groups'][number]
 export type ItemShape = GroupShape['items'][number]
 export type CommentShape = ItemShape['comments'][number]
