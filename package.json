@@ -7,8 +7,7 @@
     "seed": "tsx src/data/seed.ts",
     "analyze": "tsx src/script/analyze-assets.ts",
     "dev": "nuxt dev",
-    "build": "nuxt build",
-    "start": "nuxt start"
+    "build": "nuxt build"
   },
   "packageManager": "pnpm@10.6.4",
   "dependencies": {

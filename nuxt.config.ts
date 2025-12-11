@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 export default defineNuxtConfig({
     srcDir: 'src/',
     serverDir: 'src/server',
+    compatibilityDate: '2025-12-11',
     devtools: { enabled: true },
     modules: ['@nuxtjs/tailwindcss'],
     typescript: {
