@@ -1,41 +1,42 @@
 <script setup lang="ts">
+import Workspace from '#root/src/components/Workspace.vue'
 
-import type { BoardShape } from '#src/type/data'
+import type { WorkspaceShape } from '#src/type/data'
 
-const { data: boards } = await useFetch<BoardShape[]>('/api/boards')
+const { data: workspaces } = await useFetch<WorkspaceShape[]>('/api/boards')
 </script>
 
 <template>
-    <div class="container mx-auto p-4">
-        <h1 class="text-3xl font-bold mb-6">
-            Monday.com Backups
-        </h1>
+    <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div class="max-w-6xl mx-auto">
+            <header class="mb-12 text-center">
+                <h1 class="font-extrabold text-gray-900 tracking-tight text-3xl mb-3">
+                    Monday.com Backups
+                </h1>
+            </header>
 
-        <div
-            v-if="boards && boards.length > 0"
-            class="grid grid-cols-1 gap-4"
-        >
-            <NuxtLink
-                v-for="board in boards"
-                :key="board.boardId"
-                :to="`/boards/${board.boardId}`"
-                class="bg-white rounded-lg shadow px-4 py-3 hover:shadow-lg transition-shadow block"
+            <div
+                v-if="workspaces?.length"
+                class="space-y-6"
             >
-                <h2 class="text-xl font-semibold mb-2">
-                    {{ board.name }}
-                </h2>
-                <p class="text-gray-600 text-sm">
-                    Board ID: {{ board.boardId }}
-                </p>
-            </NuxtLink>
-        </div>
+                <Workspace
+                    v-for="workspace in workspaces"
+                    :key="workspace.name"
+                    :workspace="workspace"
+                />
+            </div>
 
-        <div
-            v-else
-            class="text-center text-gray-500 mt-10"
-        >
-            No backup boards found. Run <code class="bg-gray-200 px-1 rounded">pnpm seed</code> to fetch data.
+            <div
+                v-else
+                class="text-center py-20 bg-white rounded-3xl shadow-sm border border-gray-200 mt-8"
+            >
+                <h3 class="text-lg font-medium text-gray-900 mb-1">
+                    No backup boards found
+                </h3>
+                <p class="text-gray-500">
+                    Run <code class="px-2 py-1 bg-gray-100 rounded text-sm font-mono text-gray-700">pnpm seed</code> to fetch data.
+                </p>
+            </div>
         </div>
     </div>
 </template>
-
