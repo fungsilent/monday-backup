@@ -1,23 +1,53 @@
 <script setup lang="ts">
-import type { GroupShape, ItemShape } from '#src/type/data'
+import TableHeader from '#src/components/table/TableHeader.vue'
+import TableRow from '#root/src/components/table/TableRow.vue'
 
-defineProps<{
+import type { GroupShape, ItemShape, SubitemShape } from '#src/type/data'
+
+defineExpose({
+    open,
+    close
+})
+
+const props = defineProps<{
     group: GroupShape
-    columns: string[]
 }>()
+
+const columns = computed(() => {
+    const firstItem = props.group.items[0]
+    if (!firstItem) return []
+    return firstItem.column.map(c => c.name)
+})
+
+const detailsRef = ref<HTMLDetailsElement>()
 
 const emit = defineEmits<{
-    (event: 'clickItem', item: ItemShape): void
+    (event: 'select-item', item: ItemShape | SubitemShape): void
 }>()
+
+const getSubitemColumns = (item: ItemShape) => {
+    const firstSubitem = item.subitems?.[0]
+    if (!firstSubitem) return []
+    return firstSubitem.column.map(c => c.name)
+}
+
+function open() {
+    if (detailsRef.value) detailsRef.value.open = true
+}
+
+function close() {
+    if (detailsRef.value) detailsRef.value.open = false
+}
 </script>
 
 <template>
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <details
+            ref="detailsRef"
             class="group"
             open
         >
-            <summary class="px-6 py-4 bg-gray-50/50 cursor-pointer flex items-center justify-between select-none hover:bg-gray-50 transition-colors border-b border-gray-100 list-none">
+            <summary class="px-6 py-4 bg-gray-50 cursor-pointer flex items-center justify-between select-none hover:bg-gray-50 transition-colors border-b border-gray-100 list-none">
                 <div class="flex items-center gap-3">
                     <span class="transform group-open:rotate-90 transition-transform duration-200 text-gray-400">
                         <svg
@@ -47,51 +77,54 @@ const emit = defineEmits<{
 
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
-                            <th class="px-6 py-3 font-semibold sticky left-0 z-10 bg-gray-50">
-                                Item
-                            </th>
-                            <th
-                                v-for="colName in columns"
-                                :key="colName"
-                                class="px-6 py-3 font-medium whitespace-nowrap min-w-[150px]"
-                            >
-                                {{ colName }}
-                            </th>
-                        </tr>
-                    </thead>
+                    <TableHeader
+                        :first-column="'Item'"
+                        :columns="columns"
+                    />
                     <tbody class="divide-y divide-gray-100">
-                        <tr
+                        <template
                             v-for="item in group.items"
                             :key="item.itemId"
-                            class="group/row hover:bg-blue-50 cursor-pointer transition-colors text-sm"
-                            @click="emit('clickItem', item)"
                         >
-                            <td class="px-6 py-4 font-medium text-gray-900 min-w-[400px] max-w-[600px] sticky left-0 z-10 bg-white group-hover/row:bg-blue-50 transition-colors shadow-[1px_0_0_0_#f3f4f6,inset_-1px_0_0_0_#f3f4f6]">
-                                {{ item.title }}
-                            </td>
-                            <td
-                                v-for="col in item.column"
-                                :key="col.name"
-                                class="px-6 py-4 whitespace-nowrap text-gray-600 max-w-[300px] border-r border-gray-100 last:border-r-0"
+                            <!-- Item Row -->
+                            <TableRow
+                                v-if="!item.subitems.length"
+                                :item="item"
+                                :blank="false"
+                                :columns="columns"
+                                @click="emit('select-item', $event)"
+                            />
+
+                            <!-- Subitem Row -->
+                            <tr
+                                v-else
+                                class="bg-gray-100"
                             >
-                                <div
-                                    class="truncate"
-                                    :title="col.value || ''"
+                                <td
+                                    :colspan="1 + columns.length"
+                                    class="p-0 border-b border-gray-100"
                                 >
-                                    <span
-                                        v-if="['Status', 'Priority', 'Category'].includes(col.name)"
-                                        class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800"
-                                    >
-                                        {{ col.value || '-' }}
-                                    </span>
-                                    <span v-else>
-                                        {{ col.value || '-' }}
-                                    </span>
-                                </div>
-                            </td>
-                        </tr>
+                                    <div class="p-3 overflow-x-auto">
+                                        <table class="text-left text-xs bg-white rounded-lg border border-gray-200 shadow-sm">
+                                            <TableHeader
+                                                :first-column="'Subitem'"
+                                                :columns="getSubitemColumns(item)"
+                                            />
+                                            <tbody class="divide-y divide-gray-100">
+                                                <TableRow
+                                                    v-for="subitem in item.subitems"
+                                                    :key="subitem.itemId"
+                                                    :blank="false"
+                                                    :item="subitem"
+                                                    @click="emit('select-item', $event)"
+                                                />
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                            <!-- End of Subitem Row -->
+                        </template>
                     </tbody>
                 </table>
             </div>

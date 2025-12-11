@@ -1,6 +1,5 @@
 import 'dotenv/config'
 import fs from 'node:fs/promises'
-import path from 'node:path'
 import { createWriteStream } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
@@ -10,107 +9,30 @@ import { seedBoardIds } from '#src/data/board'
 import { joinDataDir } from '#src/util/path'
 import { getAllAssets } from '#src/util/data'
 import { isDev } from '#src/util/env'
+import { isApiTokenValid, fetchBoardGroups, fetchBoardGroupItems } from '#src/data/fetch'
 
 import type { ReadableStream } from 'node:stream/web'
-import type { BoardShape, AssetShape, ItemShape, CommentShape, ReplyShape } from '#src/type/data'
-
-/* API */
-type GraphQLResponse<T> = {
-    data: T
-    errors?: unknown[]
-}
-
-type GetAllGroupResponse = {
-    boards: {
-        id: string
-        name: string
-        groups: {
-            id: string
-            title: string
-        }[]
-    }[]
-}
-
-type GetBoardItemsResponse = {
-    boards: {
-        id: string
-        name: string
-        groups: {
-            id: string
-            title: string
-            items_page: {
-                cursor: string | null
-                items: {
-                    id: string
-                    name: string
-                    created_at: string
-                    updated_at: string
-                    creator: Creator
-                    column_values: {
-                        text: string | null
-                        type: string
-                        column: {
-                            id: string
-                            title: string
-                        }
-                    }[]
-                    assets: Asset[]
-                    updates: {
-                        id: string
-                        body: string
-                        edited_at: string
-                        created_at: string
-                        updated_at: string
-                        item_id: string
-                        original_creation_date: string | null
-                        text_body: string
-                        creator: Creator
-                        assets: Asset[]
-                        replies: {
-                            id: string
-                            body: string
-                            creator_id: string
-                            edited_at: string
-                            created_at: string
-                            updated_at: string
-                            text_body: string
-                            creator: Creator
-                            assets: Asset[]
-                        }[]
-                    }[]
-                }[]
-            }
-        }[]
-    }[]
-}
-
-type Board = GetBoardItemsResponse['boards'][number]
-type Group = Board['groups'][number]
-type Item = Group['items_page']['items'][number]
-type Comment = Item['updates'][number]
-type Reply = Comment['replies'][number]
-
-type Creator = {
-    id: string
-    name: string
-}
-
-type Asset = {
-    id: string
-    created_at: string
-    name: string
-    file_extension: string
-    file_size: number
-    public_url: string
-    url: string
-}
+import type {
+    BoardShape,
+    AssetShape,
+    ItemShape,
+    CommentShape,
+    ReplyShape,
+    BaseItemShape,
+} from '#src/type/data'
+import type {
+    Board,
+    Item,
+    Comment,
+    Reply,
+    Asset,
+    BaseItem,
+} from '#src/data/fetch'
 
 // Environment check
 const config = {
-    mondayApiToken: process.env.MONDAY_API_TOKEN,
-    mondayApiUrl: 'https://api.monday.com/v2',
     dataDir: joinDataDir(),
-    downloadAsset: true,
+    downloadAsset: false,
     boardIds: selectSeedBoardIds(),
 }
 
@@ -119,15 +41,13 @@ seed()
 
 async function seed() {
     // Environment check
-    if (!config.mondayApiToken) {
+    if (!isApiTokenValid()) {
         console.error('Error: MONDAY_API_TOKEN environment variable is not set.')
         process.exit(1)
     }
 
     console.log('Starting seed script...')
-
-    // Clean data directory
-    await cleanDataDir()
+    await setupDataDir()
 
     // Loop boards
     for (const boardId of config.boardIds) {
@@ -135,7 +55,7 @@ async function seed() {
 
         try {
             // Fetch board groups
-            const boardInfo = await getBoardGroups(boardId)
+            const boardInfo = await fetchBoardGroups(boardId)
             if (!boardInfo) {
                 console.warn(`Board ${boardId} not found.`)
                 continue
@@ -154,9 +74,9 @@ async function seed() {
                 const allItems: Item[] = []
                 let cursor: string | null = null
 
+                // Fetch group items until all items are fetched
                 do {
-                    // Fetch group items
-                    const groupData = await getBoardGroupItems(boardId, group.id, cursor)
+                    const groupData = await fetchBoardGroupItems(boardId, group.id, cursor)
                     allItems.push(...groupData.items_page.items)
                     cursor = groupData.items_page.cursor
                 } while (cursor)
@@ -166,100 +86,21 @@ async function seed() {
                     name: group.title,
                     items: allItems.map(item => {
                         return {
-                            itemId: item.id,
-                            title: item.name,
-                            createdBy: item.creator.name,
-                            createdAt: item.created_at,
-                            updatedAt: item.updated_at,
-                            column: transformColumnValue(item.column_values),
-                            assets: item.assets.map(asset => transformAsset(boardId, asset)),
-                            comments: item.updates.map(update => ({
-                                commentId: update.id,
-                                body: update.body,
-                                formattedBody: transformBody(boardId, update),
-                                edited_at: update.edited_at,
-                                created_at: update.created_at,
-                                updated_at: update.updated_at,
-                                createdBy: update.creator.name,
-                                assets: update.assets.map(asset => transformAsset(boardId, asset)),
-                                replies: update.replies.map(reply => ({
-                                    replyId: reply.id,
-                                    body: reply.body,
-                                    formattedBody: transformBody(boardId, reply),
-                                    createdBy: reply.creator.name,
-                                    createdAt: reply.created_at,
-                                    updatedAt: reply.updated_at,
-                                    assets: reply.assets.map(asset => transformAsset(boardId, asset))
-                                }))
-                            }))
+                            ...transformBaseItem(boardId, item),
+                            subitems: item.subitems.map(subitem => transformBaseItem(boardId, subitem))
                         }
                     })
                 })
             }
 
-            // Create JSON file
-            const fileName = `${boardId}.json`
-            const boardDir = path.join(config.dataDir, 'board')
-            await fs.mkdir(boardDir, { recursive: true })
-            const filePath = path.join(boardDir, fileName)
-            await fs.writeFile(filePath, JSON.stringify(targetBoard, null, 4))
-            console.log(`─ Saved to ${filePath}`)
+            await createJsonFile(targetBoard)
 
             if (!config.downloadAsset) {
                 // Skip asset download
                 continue
             }
 
-            // Download assets
-            console.log(`─ Downloading assets for board ${boardId}...`)
-            const assetDir = path.join(config.dataDir, 'asset', boardId)
-            await fs.mkdir(assetDir, { recursive: true })
-
-            const boardAssets = getAllAssets(targetBoard)
-            const totalAssets = boardAssets.length
-
-            // Sync assets: Remove local assets that are not in the new list
-            const localAssets = await fs.readdir(assetDir).catch(() => [] as string[])
-            const validAssetFilenames = new Set(boardAssets.map(asset => assetFileName(asset)))
-            const deletedFiles = new Set<string>()
-
-            await Promise.all(localAssets.map(async file => {
-                if (!validAssetFilenames.has(file)) {
-                    await fs.unlink(path.join(assetDir, file))
-                    console.log(`─── Deleted obsolete asset: ${file}`)
-                    deletedFiles.add(file)
-                }
-            }))
-
-            const existingFiles = new Set(localAssets.filter(file => !deletedFiles.has(file)))
-            const assetsToDownload = boardAssets.filter(asset => !existingFiles.has(assetFileName(asset)))
-
-            const existingCount = totalAssets - assetsToDownload.length
-            const toBeDownloadedCount = assetsToDownload.length
-
-            console.log(`─── Found ${totalAssets} assets.`)
-            console.log(`─── Existing: ${existingCount} (skipping)`)
-            console.log(`─── To download: ${toBeDownloadedCount}`)
-
-            let downloadedCount = 0
-
-            if (toBeDownloadedCount > 0) {
-                await processBatch(assetsToDownload, 50, async asset => {
-                    const filename = assetFileName(asset)
-                    const dest = path.join(assetDir, filename)
-
-                    try {
-                        await downloadFile(asset.publicUrl, dest)
-                        downloadedCount++
-                        process.stdout.write(`\r─── Progress: ${downloadedCount}/${toBeDownloadedCount} (${Math.round(downloadedCount / toBeDownloadedCount * 100)}%)`)
-                    } catch (err) {
-                        console.error(`\n─── Failed to download asset ${asset.assetId} (${asset.fileName}):`, err)
-                    }
-                })
-                process.stdout.write('\n') // New line after progress bar
-            }
-
-            console.log(`─ Assets downloaded to ${assetDir}`)
+            await downloadAssets(targetBoard)
         } catch (error) {
             console.error(`Error processing board ${boardId}:`, error)
         }
@@ -268,30 +109,93 @@ async function seed() {
     console.log('Seed script completed.')
 }
 
-async function processBatch<T>(items: T[], batchSize: number, task: (item: T) => Promise<void>) {
-    for (let i = 0; i < items.length; i += batchSize) {
-        const batch = items.slice(i, i + batchSize)
-        await Promise.all(batch.map(task))
-    }
-}
-
-async function cleanDataDir() {
+async function setupDataDir() {
     try {
-        await fs.mkdir(config.dataDir, { recursive: true })
-        const files = await fs.readdir(config.dataDir)
-        for (const file of files) {
-            const isBoardDir = file === 'board'
-            const isAssetDir = file === 'asset'
+        // Setup data directory
+        console.log('Setting up data directory...')
+        await fs.mkdir(joinDataDir(), { recursive: true })
+        await fs.mkdir(joinDataDir('board'), { recursive: true })
+        await fs.mkdir(joinDataDir('asset'), { recursive: true })
 
-            if (!isBoardDir && !isAssetDir) {
-                console.log(`Deleted: ${file}`)
-                await fs.rm(path.join(config.dataDir, file), { recursive: true, force: true })
+        // Clean board directory
+        console.log('Cleaning board directory...')
+        const jsonFiles = await fs.readdir(joinDataDir('board'))
+        await Promise.all(jsonFiles.map(async jsonFile => {
+            const boardId = jsonFile.split('.')[0]
+            if (
+                !boardId
+                || !config.boardIds.includes(boardId)
+            ) {
+                console.log(`─ Deleted: ${jsonFile}`)
+                await fs.rm(joinDataDir('board', jsonFile), { recursive: true, force: true })
             }
-        }
+        }))
     } catch (error) {
         console.error('Error cleaning data directory:', error)
         throw error
     }
+}
+
+async function createJsonFile(board: BoardShape) {
+    const fileName = `${board.boardId}.json`
+    const filePath = joinDataDir('board', fileName)
+    await fs.writeFile(filePath, JSON.stringify(board, null, 4))
+
+    console.log(`─ Saved to ${filePath}`)
+}
+
+async function downloadAssets(board: BoardShape) {
+    console.log(`─ Downloading assets for board ${board.boardId}...`)
+    const assetDir = joinDataDir('asset', board.boardId)
+    await fs.mkdir(assetDir, { recursive: true })
+
+    const boardAssets = getAllAssets(board)
+    const totalAssets = boardAssets.length
+
+    // Sync assets: Remove local assets that are not in the new list
+    const localAssets = await fs.readdir(assetDir).catch(() => [] as string[])
+    const validAssetFilenames = new Set(boardAssets.map(asset => assetFileName(asset)))
+    const deletedFiles = new Set<string>()
+
+    await Promise.all(localAssets.map(async file => {
+        if (!validAssetFilenames.has(file)) {
+            await fs.unlink(joinDataDir('asset', board.boardId, file))
+            console.log(`─── Deleted obsolete asset: ${file}`)
+            deletedFiles.add(file)
+        }
+    }))
+
+    // Summary assets
+    const existingFiles = new Set(localAssets.filter(file => !deletedFiles.has(file)))
+    const assetsToDownload = boardAssets.filter(asset => !existingFiles.has(assetFileName(asset)))
+
+    const existingCount = totalAssets - assetsToDownload.length
+    const toBeDownloadedCount = assetsToDownload.length
+
+    console.log(`─── Found ${totalAssets} assets.`)
+    console.log(`─── Existing: ${existingCount} (skipping)`)
+    console.log(`─── To download: ${toBeDownloadedCount}`)
+
+    // Download not existing assets
+    let downloadedCount = 0
+
+    if (toBeDownloadedCount > 0) {
+        await processBatch(assetsToDownload, 50, async asset => {
+            const filename = assetFileName(asset)
+            const dest = joinDataDir('asset', board.boardId, filename)
+
+            try {
+                await downloadFile(asset.publicUrl, dest)
+                downloadedCount++
+                process.stdout.write(`\r─── Progress: ${downloadedCount}/${toBeDownloadedCount} (${Math.round(downloadedCount / toBeDownloadedCount * 100)}%)`)
+            } catch (err) {
+                console.error(`\n─── Failed to download asset ${asset.assetId} (${asset.fileName}):`, err)
+            }
+        })
+        process.stdout.write('\n') // New line after progress bar
+    }
+
+    console.log(`─ Assets downloaded to ${assetDir}`)
 }
 
 async function downloadFile(publicUrl: Asset['public_url'], destPath: string) {
@@ -308,6 +212,37 @@ function assetFileName(asset: Asset | AssetShape): string {
     return 'assetId' in asset
         ? `${asset.assetId}${asset.extension}`
         : `${asset.id}${asset.file_extension}`
+}
+
+function transformBaseItem(boardId: Board['id'], item: BaseItem): BaseItemShape {
+    return {
+        itemId: item.id,
+        title: item.name,
+        createdBy: item.creator.name,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at,
+        column: transformColumnValue(item.column_values),
+        assets: item.assets.map(asset => transformAsset(boardId, asset)),
+        comments: item.updates.map(update => ({
+            commentId: update.id,
+            body: update.body,
+            formattedBody: transformBody(boardId, update),
+            edited_at: update.edited_at,
+            created_at: update.created_at,
+            updated_at: update.updated_at,
+            createdBy: update.creator.name,
+            assets: update.assets.map(asset => transformAsset(boardId, asset)),
+            replies: update.replies.map(reply => ({
+                replyId: reply.id,
+                body: reply.body,
+                formattedBody: transformBody(boardId, reply),
+                createdBy: reply.creator.name,
+                createdAt: reply.created_at,
+                updatedAt: reply.updated_at,
+                assets: reply.assets.map(asset => transformAsset(boardId, asset))
+            }))
+        })),
+    }
 }
 
 function transformBody(
@@ -346,26 +281,31 @@ function transformBody(
 }
 
 function transformColumnValue(columnValues: Item['column_values']): ItemShape['column'] {
-    return columnValues.map(column => {
-        const name = column.column.title
-        let value = column.text
+    const columns: ItemShape['column'] = []
 
-        if (value) {
-            switch (name) {
-                case 'Last Updated':
-                case 'Creation Log': {
-                    const date = new Date(value)
-                    value = formatInTimeZone(date, 'Asia/Hong_Kong', 'yyyy-MM-dd HH:mm:ss')
-                    break
-                }
+    columnValues.forEach(({ text, column }) => {
+        const name = column.title
+        let value = text
+
+        switch (name) {
+            case 'Subitems': {
+                return // skip subitems column
+            }
+            case 'Last Updated':
+            case 'Creation Log': {
+                if (!value) break
+                const date = new Date(value)
+                value = formatInTimeZone(date, 'Asia/Hong_Kong', 'yyyy-MM-dd HH:mm:ss')
+                break
             }
         }
 
-        return {
-            name: column.column.title,
-            value: value
-        }
+        columns.push({
+            name,
+            value
+        })
     })
+    return columns
 }
 
 function transformAsset(boardId: Board['id'], asset: Asset): AssetShape {
@@ -381,150 +321,15 @@ function transformAsset(boardId: Board['id'], asset: Asset): AssetShape {
     }
 }
 
-/* MARK: GraphQL */
-async function fetchGraphQL<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-    const response = await fetch(config.mondayApiUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': config.mondayApiToken!
-        },
-        body: JSON.stringify({ query, variables })
-    })
-
-    if (!response.ok) {
-        throw new Error(`API Error: ${response.status} ${response.statusText}`)
-    }
-
-    const json = await response.json() as GraphQLResponse<T>
-    if (json.errors) {
-        throw new Error(`GraphQL Error: ${JSON.stringify(json.errors)}`)
-    }
-    return json.data
-}
-
-async function getBoardGroups(boardId: Board['id']): Promise<GetAllGroupResponse['boards'][number]> {
-    const query = `
-        query ($boardIds: [ID!]) {
-            boards(ids: $boardIds) {
-                id
-                name
-                groups {
-                    id
-                    title
-                }
-            }
-        }
-    `
-    const data = await fetchGraphQL<GetAllGroupResponse>(query, { boardIds: [boardId] })
-    const board = data.boards?.[0]
-    if (!board) {
-        throw new Error(`Board ${boardId} not found.`)
-    }
-    return board
-}
-
-async function getBoardGroupItems(
-    boardId: Board['id'],
-    groupId: Group['id'],
-    cursor: Group['items_page']['cursor'] | null = null
-): Promise<Group> {
-    const limit = 100
-    const query = `
-        query ($boardIds: [ID!], $groupIds: [String!], $cursor: String) {
-            boards(ids: $boardIds) {
-                groups(ids: $groupIds) {
-                    id
-                    title
-                    items_page(limit: ${limit}, cursor: $cursor) {
-                        cursor
-                        items {
-                            id
-                            name
-                            created_at
-                            updated_at
-                            creator {
-                                id
-                                name
-                            }
-                            column_values {
-                                text
-                                type
-                                column {
-                                    id
-                                    title
-                                }
-                            }
-                            assets {
-                                id
-                                created_at
-                                file_extension
-                                file_size
-                                name
-                                public_url
-                                url
-                            }
-                            updates {
-                                id
-                                body
-                                edited_at
-                                created_at
-                                updated_at
-                                item_id
-                                original_creation_date
-                                text_body
-                                creator {
-                                    id
-                                    name
-                                }
-                                assets {
-                                    id
-                                    created_at
-                                    file_extension
-                                    file_size
-                                    name
-                                    public_url
-                                    url
-                                }
-                                replies {
-                                    id
-                                    body
-                                    creator_id
-                                    edited_at
-                                    created_at
-                                    updated_at
-                                    text_body
-                                    creator {
-                                        id
-                                        name
-                                    }
-                                    assets {
-                                        id
-                                        created_at
-                                        file_extension
-                                        file_size
-                                        name
-                                        public_url
-                                        url
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    `
-    const data = await fetchGraphQL<GetBoardItemsResponse>(query, { boardIds: [boardId], groupIds: [groupId], cursor })
-    const groups = data.boards?.[0]?.groups?.[0]
-    if (!groups) {
-        throw new Error(`Group ${groupId} not found.`)
-    }
-    return groups
-}
-
 /* Utils */
 function selectSeedBoardIds(): Board['id'][] {
     const seedData = isDev() ? seedBoardIds.dev : seedBoardIds.prod
     return Object.values(seedData).flatMap(boardIds => boardIds)
+}
+
+async function processBatch<T>(items: T[], batchSize: number, task: (item: T) => Promise<void>) {
+    for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize)
+        await Promise.all(batch.map(task))
+    }
 }

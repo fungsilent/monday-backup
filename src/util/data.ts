@@ -20,4 +20,3 @@ export const getAllAssets = (board: BoardShape): AssetShape[] => {
     // Dedup based on assetId
     return [...new Map(allAssets.map(a => [a.assetId, a])).values()]
 }
-

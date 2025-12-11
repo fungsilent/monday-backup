@@ -5,10 +5,10 @@ import { formatInTimeZone } from 'date-fns-tz'
 import UserIcon from '#root/src/components/UserIcon.vue'
 import Comment from '#root/src/components/detail/Comment.vue'
 
-import type { ItemShape } from '#src/type/data'
+import type { BaseItemShape } from '#src/type/data'
 
 defineProps<{
-    item: ItemShape
+    item: BaseItemShape
 }>()
 
 const emit = defineEmits<{

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import BoardGroup from '#root/src/components/BoardGroup.vue'
-import Detail from '#root/src/components/detail/index.vue'
+import Item from '#root/src/components/detail/Item.vue'
 
-import type { BoardShape, ItemShape } from '#src/type/data'
+import type { BaseItemShape, BoardShape } from '#src/type/data'
 
 const route = useRoute()
 const boardId = route.params.boardId as string
@@ -10,39 +10,46 @@ const boardId = route.params.boardId as string
 const { data: board, pending, error } = await useFetch<BoardShape>(`/api/boards/${boardId}`)
 
 const searchQuery = ref('')
-const selectedItem = ref<ItemShape | null>(null)
+const selectedItem = ref<BaseItemShape | null>(null)
+const boardGroupsRef = ref<InstanceType<typeof BoardGroup>[] | null>(null)
 
 // Filter items based on search query
 const filteredGroups = computed(() => {
     if (!board.value) return []
     if (!searchQuery.value) return board.value.groups
 
-    const query = searchQuery.value.toLowerCase()
+    const query = searchQuery.value
 
-    return board.value.groups.map(group => ({
-        ...group,
-        items: group.items.filter(item => {
+    return board.value.groups
+        .map(group => ({
+            ...group,
+            items: group.items.filter(item => {
             // Search in title
-            if (item.title.toLowerCase().includes(query)) return true
+                if (item.title.toLowerCase().includes(query)) return true
 
-            // Search in columns
-            return item.column.some(col =>
-                col.value && col.value.toLowerCase().includes(query)
-            )
-        })
-    })).filter(group => group.items.length > 0)
+                // Search in columns
+                return item.column.some(col =>
+                    col.value && col.value.toLowerCase().includes(query)
+                )
+            })
+        }))
+        .filter(group => !!group.items.length)
 })
 
-const columnNames = computed(() => {
-    return board.value?.groups[0]?.items[0]?.column.map(c => c.name) || []
-})
-
-const openItemModal = (item: ItemShape) => {
+const selectItem = (item: BaseItemShape) => {
     selectedItem.value = item
 }
 
-const closeModal = () => {
+const clearSelectedItem = () => {
     selectedItem.value = null
+}
+
+const expandAll = () => {
+    boardGroupsRef.value?.forEach(group => group.open())
+}
+
+const collapseAll = () => {
+    boardGroupsRef.value?.forEach(group => group.close())
 }
 </script>
 
@@ -93,7 +100,7 @@ const closeModal = () => {
 
         <div v-else-if="board">
             <!-- Header -->
-            <header class="bg-white rounded-xl shadow-sm border border-gray-200 px-6 py-5 mb-8">
+            <header class="bg-white rounded-xl shadow-sm border border-gray-200 px-6 py-3 mb-8 sticky top-0 z-30">
                 <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <div class="flex items-center gap-4">
                         <NuxtLink
@@ -128,27 +135,71 @@ const closeModal = () => {
                         </div>
                     </div>
 
-                    <div class="relative w-full lg:w-96">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg
-                                class="h-5 w-5 text-gray-400"
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
+                    <div class="flex items-center gap-4 w-full lg:w-auto">
+                        <div class="flex items-center bg-gray-100 rounded-lg p-1">
+                            <button
+                                type="button"
+                                class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-white rounded-md transition-all shadow-sm hover:shadow"
+                                title="Expand All"
+                                @click="expandAll"
                             >
-                                <path
-                                    fill-rule="evenodd"
-                                    d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                                    clip-rule="evenodd"
-                                />
-                            </svg>
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    class="h-5 w-5"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                >
+                                    <path
+                                        fill-rule="evenodd"
+                                        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                                        clip-rule="evenodd"
+                                    />
+                                </svg>
+                            </button>
+                            <div class="w-px h-4 bg-gray-300 mx-1" />
+                            <button
+                                type="button"
+                                class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-white rounded-md transition-all shadow-sm hover:shadow"
+                                title="Collapse All"
+                                @click="collapseAll"
+                            >
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    class="h-5 w-5"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                >
+                                    <path
+                                        fill-rule="evenodd"
+                                        d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"
+                                        clip-rule="evenodd"
+                                    />
+                                </svg>
+                            </button>
                         </div>
-                        <input
-                            v-model="searchQuery"
-                            type="text"
-                            placeholder="Search items..."
-                            class="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-shadow shadow-sm"
-                        >
+
+                        <div class="relative flex-1 lg:w-96">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg
+                                    class="h-5 w-5 text-gray-400"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                >
+                                    <path
+                                        fill-rule="evenodd"
+                                        d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                                        clip-rule="evenodd"
+                                    />
+                                </svg>
+                            </div>
+                            <input
+                                v-model="searchQuery"
+                                type="text"
+                                placeholder="Search items..."
+                                class="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-shadow shadow-sm"
+                            >
+                        </div>
                     </div>
                 </div>
             </header>
@@ -158,17 +209,17 @@ const closeModal = () => {
                 <BoardGroup
                     v-for="group in filteredGroups"
                     :key="group.groupId"
+                    ref="boardGroupsRef"
                     :group="group"
-                    :columns="columnNames"
-                    @click-item="openItemModal"
+                    @select-item="selectItem"
                 />
             </div>
 
             <!-- Item Detail Modal -->
-            <Detail
+            <Item
                 v-if="selectedItem"
                 :item="selectedItem"
-                @close="closeModal"
+                @close="clearSelectedItem"
             />
         </div>
     </div>

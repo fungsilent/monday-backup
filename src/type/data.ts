@@ -5,38 +5,44 @@ export type BoardShape = {
     groups: {
         groupId: string
         name: string
-        items: {
-            itemId: string
-            title: string
-            createdBy: string
-            createdAt: string
-            updatedAt: string
-            column: {
-                name: string
-                value: string | null
-            }[]
-            assets: AssetShape[]
-            comments: {
-                commentId: string
-                body: string
-                formattedBody: string
-                edited_at: string
-                created_at: string
-                updated_at: string
-                createdBy: string
-                assets: AssetShape[]
-                replies: {
-                    replyId: string
-                    body: string
-                    formattedBody: string
-                    createdBy: string
-                    createdAt: string
-                    updatedAt: string
-                    assets: AssetShape[]
-                }[]
-            }[]
-        }[]
+        items: Array<BaseItemShape & { subitems: BaseItemShape[] }>
     }[]
+}
+
+export type BaseItemShape = {
+    itemId: string
+    title: string
+    createdBy: string
+    createdAt: string
+    updatedAt: string
+    column: {
+        name: string
+        value: string | null
+    }[]
+    assets: AssetShape[]
+    comments: CommentShape[]
+}
+
+export type CommentShape = {
+    commentId: string
+    body: string
+    formattedBody: string
+    edited_at: string
+    created_at: string
+    updated_at: string
+    createdBy: string
+    assets: AssetShape[]
+    replies: ReplyShape[]
+}
+
+export type ReplyShape = {
+    replyId: string
+    body: string
+    formattedBody: string
+    createdBy: string
+    createdAt: string
+    updatedAt: string
+    assets: AssetShape[]
 }
 
 export type AssetShape = {
@@ -56,5 +62,4 @@ export type WorkspaceShape = {
 }
 export type GroupShape = BoardShape['groups'][number]
 export type ItemShape = GroupShape['items'][number]
-export type CommentShape = ItemShape['comments'][number]
-export type ReplyShape = CommentShape['replies'][number]
+export type SubitemShape = ItemShape['subitems'][number]
