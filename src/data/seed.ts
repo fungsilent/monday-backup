@@ -332,14 +332,14 @@ function printSummary(results: SeedResult[]) {
     console.log(
         'Board ID'.padEnd(15) +
         'Status'.padEnd(12) +
-        'Assets (Success/Fail/Total)'.padEnd(30) +
+        'Assets (Success / Fail / Total)'.padEnd(30) +
         'Note'
     )
     console.log('─'.repeat(100))
 
     for (const res of results) {
         const status = res.status === 'success' ? '✅ Success' : '❌ Failed'
-        const assets = `${res.assets.downloaded}/${res.assets.failed}/${res.assets.total}`
+        const assets = `${res.assets.downloaded + res.assets.existing} / ${res.assets.failed} / ${res.assets.total}`
         const note = res.error || res.boardName || ''
 
         console.log(
