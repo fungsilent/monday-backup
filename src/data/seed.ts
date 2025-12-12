@@ -44,8 +44,8 @@ type SeedResult = {
 }
 
 const dev = process.argv.includes('--dev')
+const clean = process.argv.includes('--clean')
 const noFetch = process.argv.includes('--no-fetch')
-const noClean = process.argv.includes('--no-clean')
 const noDownload = process.argv.includes('--no-download')
 
 const seedData = dev ? seedBoardIds.dev : seedBoardIds.prod
@@ -91,7 +91,7 @@ async function seed() {
                 await fs.access(filePath)
                 result.status = 'success'
                 result.error = undefined
-            } catch { /* empty */ }
+            } catch { /* emptyg */ }
 
             results.push(result)
         }
@@ -231,7 +231,10 @@ async function setupDataDir() {
         await fs.mkdir(joinDataDir('board'), { recursive: true })
         await fs.mkdir(joinDataDir('asset'), { recursive: true })
 
-        if (noClean) return
+        if (!clean) {
+            console.log('Skipping clean...')
+            return
+        }
 
         // Clean board directory
         console.log('Cleaning board directory...')
@@ -370,7 +373,7 @@ function transformBaseItem(boardId: Board['id'], item: BaseItem): BaseItemShape 
     return {
         itemId: item.id,
         title: item.name,
-        createdBy: item.creator.name,
+        createdBy: item.creator?.name ?? 'Unknown',
         createdAt: item.created_at,
         updatedAt: item.updated_at,
         column: transformColumnValue(item.column_values),
@@ -382,13 +385,13 @@ function transformBaseItem(boardId: Board['id'], item: BaseItem): BaseItemShape 
             edited_at: update.edited_at,
             created_at: update.created_at,
             updated_at: update.updated_at,
-            createdBy: update.creator.name,
+            createdBy: update.creator?.name ?? 'Unknown',
             assets: update.assets.map(asset => transformAsset(boardId, asset)),
             replies: update.replies.map(reply => ({
                 replyId: reply.id,
                 body: reply.body,
                 formattedBody: transformBody(boardId, reply),
-                createdBy: reply.creator.name,
+                createdBy: reply.creator?.name ?? 'Unknown',
                 createdAt: reply.created_at,
                 updatedAt: reply.updated_at,
                 assets: reply.assets.map(asset => transformAsset(boardId, asset))

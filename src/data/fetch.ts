@@ -59,7 +59,7 @@ export type BaseItem = {
         item_id: string
         original_creation_date: string | null
         text_body: string
-        creator: Creator
+        creator: Creator | null
         assets: Asset[]
         replies: {
             id: string
@@ -69,7 +69,7 @@ export type BaseItem = {
             created_at: string
             updated_at: string
             text_body: string
-            creator: Creator
+            creator: Creator | null
             assets: Asset[]
         }[]
     }[]

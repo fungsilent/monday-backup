@@ -18,7 +18,20 @@ const filteredGroups = computed(() => {
     if (!board.value) return []
     if (!searchQuery.value) return board.value.groups
 
-    const query = searchQuery.value
+    const query = searchQuery.value.toLowerCase()
+
+    // Support search by ID (e.g., "id:123456")
+    if (query.startsWith('id:')) {
+        const id = query.slice(3).trim()
+        if (!id) return board.value.groups
+
+        return board.value.groups
+            .map(group => ({
+                ...group,
+                items: group.items.filter(item => item.itemId.includes(id))
+            }))
+            .filter(group => !!group.items.length)
+    }
 
     return board.value.groups
         .map(group => ({

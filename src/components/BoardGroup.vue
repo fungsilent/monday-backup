@@ -88,7 +88,6 @@ function close() {
                         >
                             <!-- Item Row -->
                             <TableRow
-                                v-if="!item.subitems.length"
                                 :item="item"
                                 :blank="false"
                                 :columns="columns"
@@ -97,7 +96,7 @@ function close() {
 
                             <!-- Subitem Row -->
                             <tr
-                                v-else
+                                v-if="item.subitems.length"
                                 class="bg-gray-100"
                             >
                                 <td
