@@ -26,7 +26,10 @@ const prod = {
     ],
     had: [
         '7100594965',
-    ]
+    ],
+    cic: [
+        '3384646556',
+    ],
 }
 
 export const seedBoardIds = {
