@@ -5,12 +5,12 @@ import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import { formatInTimeZone } from 'date-fns-tz'
 
-import { downloadAsset } from '#root/config'
 import { seedBoardIds } from '#src/data/board'
+import { isApiTokenValid, fetchBoardGroups, fetchBoardGroupItems } from '#src/data/fetch'
+
 import { joinDataDir } from '#src/util/path'
 import { getAllAssets } from '#src/util/data'
-import { isDev } from '#src/util/env'
-import { isApiTokenValid, fetchBoardGroups, fetchBoardGroupItems } from '#src/data/fetch'
+import { promiseConcurrencyPool } from '#src/util/fetch'
 
 import type { ReadableStream } from 'node:stream/web'
 import type {
@@ -30,7 +30,24 @@ import type {
     BaseItem,
 } from '#src/data/fetch'
 
-const seedData = isDev() ? seedBoardIds.dev : seedBoardIds.prod
+type SeedResult = {
+    boardId: string
+    boardName?: string
+    status: 'success' | 'failed'
+    error?: string
+    assets: {
+        total: number
+        existing: number
+        downloaded: number
+        failed: number
+    }
+}
+
+const dev = process.argv.includes('--dev')
+const noClean = process.argv.includes('--no-clean')
+const noDownload = process.argv.includes('--no-download')
+
+const seedData = dev ? seedBoardIds.dev : seedBoardIds.prod
 const allBoardIds = Object.values(seedData).flatMap(boardIds => boardIds)
 
 /* Main: Seed */
@@ -43,8 +60,12 @@ async function seed() {
         process.exit(1)
     }
 
+    printConfig()
+
     console.log('Starting seed script...')
     await setupDataDir()
+
+    const results: SeedResult[] = []
 
     // Loop boards
     for (const boardId of allBoardIds) {
@@ -55,6 +76,12 @@ async function seed() {
             const boardInfo = await fetchBoardGroups(boardId)
             if (!boardInfo) {
                 console.warn(`Board ${boardId} not found.`)
+                results.push({
+                    boardId,
+                    status: 'failed',
+                    error: 'Board not found',
+                    assets: { total: 0, existing: 0, downloaded: 0, failed: 0 }
+                })
                 continue
             }
 
@@ -93,18 +120,65 @@ async function seed() {
 
             await createJsonFile(targetBoard)
 
-            if (!downloadAsset) {
-                // Skip asset download
-                continue
+            let assetStats = { total: 0, existing: 0, downloaded: 0, failed: 0 }
+            if (!noDownload) {
+                assetStats = await downloadAssets(targetBoard)
             }
 
-            await downloadAssets(targetBoard)
+            results.push({
+                boardId,
+                boardName: boardInfo.name,
+                status: 'success',
+                assets: assetStats
+            })
         } catch (error) {
             console.error(`Error processing board ${boardId}:`, error)
+            results.push({
+                boardId,
+                status: 'failed',
+                error: error instanceof Error ? error.message : String(error),
+                assets: { total: 0, existing: 0, downloaded: 0, failed: 0 }
+            })
         }
     }
 
-    console.log('Seed script completed.')
+    printSummary(results)
+    process.exit(0)
+}
+
+function printSummary(results: SeedResult[]) {
+    console.log('\n\nSummary:')
+    console.log('='.repeat(100))
+    console.log(
+        'Board ID'.padEnd(15) +
+        'Status'.padEnd(12) +
+        'Assets (Success/Fail/Total)'.padEnd(30) +
+        'Note'
+    )
+    console.log('─'.repeat(100))
+
+    for (const res of results) {
+        const status = res.status === 'success' ? '✅ Success' : '❌ Failed'
+        const assets = `${res.assets.downloaded}/${res.assets.failed}/${res.assets.total}`
+        const note = res.error || res.boardName || ''
+
+        console.log(
+            res.boardId.padEnd(15) +
+            status.padEnd(12) +
+            assets.padEnd(30) +
+            note
+        )
+    }
+    console.log('='.repeat(100))
+}
+
+function printConfig() {
+    const length = 30
+    const line = '─'.repeat(60)
+    console.log(line)
+    console.log('Environment'.padEnd(length), dev ? 'development' : 'production')
+    console.log('Download assets'.padEnd(length), noDownload ? 'skipped' : 'enabled')
+    console.log(line)
 }
 
 async function setupDataDir() {
@@ -114,6 +188,8 @@ async function setupDataDir() {
         await fs.mkdir(joinDataDir(), { recursive: true })
         await fs.mkdir(joinDataDir('board'), { recursive: true })
         await fs.mkdir(joinDataDir('asset'), { recursive: true })
+
+        if (noClean) return
 
         // Clean board directory
         console.log('Cleaning board directory...')
@@ -176,9 +252,10 @@ async function downloadAssets(board: BoardShape) {
 
     // Download not existing assets
     let downloadedCount = 0
+    let failedCount = 0
 
     if (toBeDownloadedCount > 0) {
-        await processBatch(assetsToDownload, 50, async asset => {
+        await promiseConcurrencyPool(assetsToDownload, 50, async asset => {
             const filename = assetFileName(asset)
             const dest = joinDataDir('asset', board.boardId, filename)
 
@@ -187,13 +264,22 @@ async function downloadAssets(board: BoardShape) {
                 downloadedCount++
                 process.stdout.write(`\r─── Progress: ${downloadedCount}/${toBeDownloadedCount} (${Math.round(downloadedCount / toBeDownloadedCount * 100)}%)`)
             } catch (err) {
+                failedCount++
                 console.error(`\n─── Failed to download asset ${asset.assetId} (${asset.fileName}):`, err)
             }
         })
+
         process.stdout.write('\n') // New line after progress bar
     }
 
     console.log(`─ Assets downloaded to ${assetDir}`)
+
+    return {
+        total: totalAssets,
+        existing: existingCount,
+        downloaded: downloadedCount,
+        failed: failedCount
+    }
 }
 
 async function downloadFile(publicUrl: Asset['public_url'], destPath: string) {
@@ -316,13 +402,5 @@ function transformAsset(boardId: Board['id'], asset: Asset): AssetShape {
         url: asset.url,
         localUrl: `/asset/${boardId}/${assetFileName(asset)}`,
         createdAt: asset.created_at
-    }
-}
-
-/* Utils */
-async function processBatch<T>(items: T[], batchSize: number, task: (item: T) => Promise<void>) {
-    for (let i = 0; i < items.length; i += batchSize) {
-        const batch = items.slice(i, i + batchSize)
-        await Promise.all(batch.map(task))
     }
 }

@@ -4,8 +4,7 @@
   "scripts": {
     "type": "tsc --noEmit",
     "lint": "eslint src --fix",
-    "seed:dev": "cross-env NODE_ENV=development tsx src/data/seed.ts",
-    "seed": "cross-env NODE_ENV=production tsx src/data/seed.ts",
+    "seed": "tsx src/data/seed.ts",
     "analyze": "tsx src/script/analyze-assets.ts",
     "dev": "nuxt dev",
     "build": "nuxt build"

@@ -1,5 +1,7 @@
 import 'dotenv/config'
 
+import { request } from '#src/util/fetch'
+
 /* API */
 type GraphQLResponse<T> = {
     data: T
@@ -103,13 +105,15 @@ export const isApiTokenValid = (): boolean => {
 }
 
 export const fetchGraphQL = async <T>(query: string, variables: Record<string, unknown> = {}): Promise<T> => {
-    const response = await fetchWithTimeout(MONDAY_API_URL, {
+    const response = await request({
+        url: MONDAY_API_URL,
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': MONDAY_API_TOKEN || ''
         },
-        body: JSON.stringify({ query, variables })
+        body: JSON.stringify({ query, variables }),
+        timeout,
     })
 
     if (!response.ok) {
@@ -250,16 +254,4 @@ export const fetchBoardGroupItems = async (
         throw new Error(`Group ${groupId} not found.`)
     }
     return groups
-}
-
-async function fetchWithTimeout(url: string, options: RequestInit, time = timeout) {
-    const controller = new AbortController()
-    setTimeout(() => {
-        controller.abort()
-    }, time)
-
-    return await fetch(url, {
-        ...options,
-        signal: controller.signal
-    })
 }
