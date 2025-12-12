@@ -7,6 +7,7 @@ import { formatInTimeZone } from 'date-fns-tz'
 
 import { seedBoardIds } from '#src/data/board'
 import { isApiTokenValid, fetchBoardGroups, fetchBoardGroupItems } from '#src/data/fetch'
+import { request } from '#src/util/fetch'
 
 import { joinDataDir } from '#src/util/path'
 import { getAllAssets } from '#src/util/data'
@@ -33,11 +34,11 @@ import type {
 type SeedResult = {
     boardId: string
     boardName?: string
-    status: 'success' | 'failed'
+    status: 'success' | 'fail' | 'exist'
     error?: string
     assets: {
         total: number
-        existing: number
+        skipped: number
         downloaded: number
         failed: number
     }
@@ -81,15 +82,15 @@ async function seed() {
         for (const boardId of allBoardIds) {
             const result: SeedResult = {
                 boardId,
-                status: 'failed',
+                status: 'fail',
                 error: 'JSON file not found',
-                assets: { total: 0, existing: 0, downloaded: 0, failed: 0 }
+                assets: { total: 0, skipped: 0, downloaded: 0, failed: 0 }
             }
 
             try {
                 const filePath = joinDataDir('board', `${boardId}.json`)
                 await fs.access(filePath)
-                result.status = 'success'
+                result.status = 'exist'
                 result.error = undefined
             } catch { /* emptyg */ }
 
@@ -123,9 +124,9 @@ async function fetchAndSaveBoardData() {
                 console.warn(`Board ${boardId} not found.`)
                 results.push({
                     boardId,
-                    status: 'failed',
+                    status: 'fail',
                     error: 'Board not found',
-                    assets: { total: 0, existing: 0, downloaded: 0, failed: 0 }
+                    assets: { total: 0, skipped: 0, downloaded: 0, failed: 0 }
                 })
                 continue
             }
@@ -169,18 +170,18 @@ async function fetchAndSaveBoardData() {
                 boardId,
                 boardName: boardInfo.name,
                 status: 'success',
-                assets: { total: 0, existing: 0, downloaded: 0, failed: 0 }
+                assets: { total: 0, skipped: 0, downloaded: 0, failed: 0 }
             })
 
         } catch (error) {
             console.error(`Error processing board ${boardId}:`, error)
             results.push({
                 boardId,
-                status: 'failed',
+                status: 'fail',
                 error: error instanceof Error
                     ? error.message
                     : String(error),
-                assets: { total: 0, existing: 0, downloaded: 0, failed: 0 }
+                assets: { total: 0, skipped: 0, downloaded: 0, failed: 0 }
             })
         }
     }
@@ -190,7 +191,7 @@ async function fetchAndSaveBoardData() {
 
 async function findAndDownloadAssets(results: SeedResult[]) {
     for (const result of results) {
-        if (result.status !== 'success') continue
+        if (result.status === 'fail') continue
 
         try {
             // Read the JSON file
@@ -273,42 +274,44 @@ async function downloadAssets(board: BoardShape) {
     // Sync assets: Remove local assets that are not in the new list
     const localAssets = await fs.readdir(assetDir).catch(() => [] as string[])
     const validAssetFilenames = new Set(boardAssets.map(asset => assetFileName(asset)))
-    const deletedFiles = new Set<string>()
 
+    // Cleanup obsolete files
     await Promise.all(localAssets.map(async file => {
         if (!validAssetFilenames.has(file)) {
             await fs.unlink(joinDataDir('asset', board.boardId, file))
             console.log(`─── Deleted obsolete asset: ${file}`)
-            deletedFiles.add(file)
         }
     }))
 
-    // Summary assets
-    const existingFiles = new Set(localAssets.filter(file => !deletedFiles.has(file)))
-    const assetsToDownload = boardAssets.filter(asset => !existingFiles.has(assetFileName(asset)))
-
-    const existingCount = totalAssets - assetsToDownload.length
-    const toBeDownloadedCount = assetsToDownload.length
-
     console.log(`─── Found ${totalAssets} assets.`)
-    console.log(`─── Existing: ${existingCount} (skipping)`)
-    console.log(`─── To download: ${toBeDownloadedCount}`)
 
-    // Download not existing assets
-    let downloadedCount = 0
-    let failedCount = 0
+    const count = {
+        skipped: 0,
+        downloaded: 0,
+        failed: 0,
+    }
 
-    if (toBeDownloadedCount > 0) {
-        await promiseConcurrencyPool(assetsToDownload, 50, async asset => {
-            const filename = assetFileName(asset)
-            const dest = joinDataDir('asset', board.boardId, filename)
+    if (totalAssets) {
+        await promiseConcurrencyPool(boardAssets, 50, async asset => {
+            const dest = joinDataDir('asset', board.boardId, assetFileName(asset))
 
             try {
+                try {
+                    await fs.access(dest)
+                    count.skipped++
+                    return
+                } catch {
+                    // File does not exist, proceed to download
+                }
+
                 await downloadFile(asset.publicUrl, dest)
-                downloadedCount++
-                process.stdout.write(`\r─── Progress: ${downloadedCount}/${toBeDownloadedCount} (${Math.round(downloadedCount / toBeDownloadedCount * 100)}%)`)
+                count.downloaded++
+
+                // Only show progress for actual downloads
+                const progress = count.skipped + count.downloaded + count.failed
+                process.stdout.write(`\r─── Progress: ${progress} / ${totalAssets} (${Math.round(progress / totalAssets * 100)}%)`)
             } catch (error) {
-                failedCount++
+                count.failed++
                 console.error(`\n─── Failed to download asset ${asset.assetId} (${asset.fileName}):`, error)
             }
         })
@@ -320,9 +323,9 @@ async function downloadAssets(board: BoardShape) {
 
     return {
         total: totalAssets,
-        existing: existingCount,
-        downloaded: downloadedCount,
-        failed: failedCount
+        skipped: count.skipped,
+        downloaded: count.downloaded,
+        failed: count.failed
     }
 }
 
@@ -338,8 +341,11 @@ function printSummary(results: SeedResult[]) {
     console.log('─'.repeat(100))
 
     for (const res of results) {
-        const status = res.status === 'success' ? '✅ Success' : '❌ Failed'
-        const assets = `${res.assets.downloaded + res.assets.existing} / ${res.assets.failed} / ${res.assets.total}`
+        let status = '❌ Failed'
+        if (res.status === 'success') status = '✅ Success'
+        if (res.status === 'exist') status = '📁 Exist'
+
+        const assets = `${res.assets.downloaded + res.assets.skipped} / ${res.assets.failed} / ${res.assets.total}`
         const note = res.error || res.boardName || ''
 
         console.log(
@@ -354,7 +360,10 @@ function printSummary(results: SeedResult[]) {
 
 /* MARK: Util */
 async function downloadFile(publicUrl: Asset['public_url'], destPath: string) {
-    const res = await fetch(publicUrl)
+    const res = await request({
+        url: publicUrl,
+        timeout: 10000,
+    })
     if (!res.ok) throw new Error(`Failed to fetch ${publicUrl}: ${res.statusText}`)
     if (!res.body) throw new Error(`No body for ${publicUrl}`)
 
