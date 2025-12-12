@@ -10,6 +10,7 @@ type GetAllGroupResponse = {
     boards: {
         id: string
         name: string
+        created_at: string
         groups: {
             id: string
             title: string
@@ -95,13 +96,14 @@ type Creator = {
 
 const MONDAY_API_URL = 'https://api.monday.com/v2'
 const MONDAY_API_TOKEN = process.env.MONDAY_API_TOKEN
+const timeout = 5 * 60 * 1000 // 5 minutes
 
 export const isApiTokenValid = (): boolean => {
     return !!MONDAY_API_TOKEN
 }
 
 export const fetchGraphQL = async <T>(query: string, variables: Record<string, unknown> = {}): Promise<T> => {
-    const response = await fetch(MONDAY_API_URL, {
+    const response = await fetchWithTimeout(MONDAY_API_URL, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -128,6 +130,7 @@ export const fetchBoardGroups = async (boardId: Board['id']): Promise<GetAllGrou
             boards(ids: $boardIds) {
                 id
                 name
+                created_at
                 groups {
                     id
                     title
@@ -247,4 +250,16 @@ export const fetchBoardGroupItems = async (
         throw new Error(`Group ${groupId} not found.`)
     }
     return groups
+}
+
+async function fetchWithTimeout(url: string, options: RequestInit, time = timeout) {
+    const controller = new AbortController()
+    setTimeout(() => {
+        controller.abort()
+    }, time)
+
+    return await fetch(url, {
+        ...options,
+        signal: controller.signal
+    })
 }

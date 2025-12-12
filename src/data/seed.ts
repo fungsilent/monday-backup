@@ -61,6 +61,7 @@ async function seed() {
             const targetBoard: BoardShape = {
                 boardId: boardInfo.id,
                 name: boardInfo.name,
+                createdAt: boardInfo.created_at,
                 groups: []
             }
 

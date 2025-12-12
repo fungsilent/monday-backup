@@ -2,6 +2,7 @@
 export type BoardShape = {
     boardId: string
     name: string
+    createdAt: string
     groups: {
         groupId: string
         name: string
@@ -58,7 +59,7 @@ export type AssetShape = {
 
 export type WorkspaceShape = {
     name: BoardShape['name']
-    boards: Pick<BoardShape, 'boardId' | 'name'>[]
+    boards: Pick<BoardShape, 'boardId' | 'name' | 'createdAt'>[]
 }
 export type GroupShape = BoardShape['groups'][number]
 export type ItemShape = GroupShape['items'][number]

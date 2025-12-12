@@ -26,19 +26,21 @@ export default defineEventHandler(async event => {
         const workspaces: WorkspaceShape[] = []
         const assignedBoardIds = new Set<string>()
 
-        Object.entries(workspaceIds).forEach(([groupName, ids]) => {
-            const boardsInGroup = allBoards.filter(b => ids.includes(b.boardId))
-            if (boardsInGroup.length) {
+        Object.entries(workspaceIds).forEach(([workspaceName, ids]) => {
+            const boardsInWorkspace = allBoards.filter(b => ids.includes(b.boardId))
+            if (boardsInWorkspace.length) {
+                boardsInWorkspace.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                 workspaces.push({
-                    name: groupName.toUpperCase(),
-                    boards: boardsInGroup,
+                    name: workspaceName.toUpperCase(),
+                    boards: boardsInWorkspace,
                 })
-                boardsInGroup.forEach(b => assignedBoardIds.add(b.boardId))
+                boardsInWorkspace.forEach(b => assignedBoardIds.add(b.boardId))
             }
         })
 
         const otherBoards = allBoards.filter(b => !assignedBoardIds.has(b.boardId))
         if (otherBoards.length > 0) {
+            otherBoards.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
             workspaces.push({
                 name: 'other',
                 boards: otherBoards,
@@ -59,30 +61,39 @@ async function readBoardMetadata(filePath: string) {
         crlfDelay: Infinity,
     })
 
-    let boardId = ''
-    let name = ''
+    const metadata = {
+        boardId: '',
+        name: '',
+        createdAt: '',
+    }
 
     for await (const line of rl) {
-        if (!boardId) {
+        if (!metadata.boardId) {
             const match = line.match(/"boardId":\s*"([^"]+)"/)
             if (match && match[1]) {
-                boardId = match[1]
+                metadata.boardId = match[1]
             }
         }
 
-        if (!name) {
+        if (!metadata.name) {
             const match = line.match(/"name":\s*"([^"]+)"/)
             if (match && match[1]) {
-                name = match[1]
+                metadata.name = match[1]
             }
         }
 
-        if (boardId && name) {
-            rl.close()
+        if (!metadata.createdAt) {
+            const match = line.match(/"createdAt":\s*"([^"]+)"/)
+            if (match && match[1]) {
+                metadata.createdAt = match[1]
+            }
+        }
+
+        if (Object.values(metadata).every(v => !!v)) {
             fileStream.destroy()
             break
         }
     }
 
-    return { boardId, name }
+    return metadata
 }
