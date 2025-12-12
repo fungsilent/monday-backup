@@ -44,30 +44,75 @@ type SeedResult = {
 }
 
 const dev = process.argv.includes('--dev')
+const noFetch = process.argv.includes('--no-fetch')
 const noClean = process.argv.includes('--no-clean')
 const noDownload = process.argv.includes('--no-download')
 
 const seedData = dev ? seedBoardIds.dev : seedBoardIds.prod
 const allBoardIds = Object.values(seedData).flatMap(boardIds => boardIds)
 
-/* Main: Seed */
 seed()
 
+/* MARK: Seed */
 async function seed() {
     // Environment check
     if (!isApiTokenValid()) {
         console.error('Error: MONDAY_API_TOKEN environment variable is not set.')
         process.exit(1)
     }
+    if (noFetch && noDownload) {
+        console.error('Error: no-fetch and no-download options both enabled to not do anything.')
+        process.exit(1)
+    }
 
     printConfig()
-
     console.log('Starting seed script...')
     await setupDataDir()
 
+    let results: SeedResult[] = []
+
+    // Phase 1: Fetch data, transform, and save JSON
+    if (!noFetch) {
+        console.log('\n🔵 Phase 1: Fetching and saving board data...')
+        results = await fetchAndSaveBoardData()
+    } else {
+        console.log('\n🔵 Phase 1: Data fetching skipped.')
+        // When skipping fetch, if existing JSON files then mark as success, otherwise mark as failed
+        for (const boardId of allBoardIds) {
+            const result: SeedResult = {
+                boardId,
+                status: 'failed',
+                error: 'JSON file not found',
+                assets: { total: 0, existing: 0, downloaded: 0, failed: 0 }
+            }
+
+            try {
+                const filePath = joinDataDir('board', `${boardId}.json`)
+                await fs.access(filePath)
+                result.status = 'success'
+                result.error = undefined
+            } catch { /* empty */ }
+
+            results.push(result)
+        }
+    }
+
+    // Phase 2: Download assets (if enabled)
+    if (!noDownload) {
+        console.log('\n🔵 Phase 2: Downloading assets...')
+        results = await findAndDownloadAssets(results)
+    } else {
+        console.log('\n🔵 Phase 2: Asset download skipped.')
+    }
+
+    printSummary(results)
+    process.exit(0)
+}
+
+/* MARK: Phase */
+async function fetchAndSaveBoardData() {
     const results: SeedResult[] = []
 
-    // Loop boards
     for (const boardId of allBoardIds) {
         console.log(`Processing board: ${boardId}`)
 
@@ -120,63 +165,60 @@ async function seed() {
 
             await createJsonFile(targetBoard)
 
-            let assetStats = { total: 0, existing: 0, downloaded: 0, failed: 0 }
-            if (!noDownload) {
-                assetStats = await downloadAssets(targetBoard)
-            }
-
             results.push({
                 boardId,
                 boardName: boardInfo.name,
                 status: 'success',
-                assets: assetStats
+                assets: { total: 0, existing: 0, downloaded: 0, failed: 0 }
             })
+
         } catch (error) {
             console.error(`Error processing board ${boardId}:`, error)
             results.push({
                 boardId,
                 status: 'failed',
-                error: error instanceof Error ? error.message : String(error),
+                error: error instanceof Error
+                    ? error.message
+                    : String(error),
                 assets: { total: 0, existing: 0, downloaded: 0, failed: 0 }
             })
         }
     }
 
-    printSummary(results)
-    process.exit(0)
+    return results
 }
 
-function printSummary(results: SeedResult[]) {
-    console.log('\n\nSummary:')
-    console.log('='.repeat(100))
-    console.log(
-        'Board ID'.padEnd(15) +
-        'Status'.padEnd(12) +
-        'Assets (Success/Fail/Total)'.padEnd(30) +
-        'Note'
-    )
-    console.log('─'.repeat(100))
+async function findAndDownloadAssets(results: SeedResult[]) {
+    for (const result of results) {
+        if (result.status !== 'success') continue
 
-    for (const res of results) {
-        const status = res.status === 'success' ? '✅ Success' : '❌ Failed'
-        const assets = `${res.assets.downloaded}/${res.assets.failed}/${res.assets.total}`
-        const note = res.error || res.boardName || ''
+        try {
+            // Read the JSON file
+            const filePath = joinDataDir('board', `${result.boardId}.json`)
+            const fileContent = await fs.readFile(filePath, 'utf-8')
+            const board: BoardShape = JSON.parse(fileContent)
 
-        console.log(
-            res.boardId.padEnd(15) +
-            status.padEnd(12) +
-            assets.padEnd(30) +
-            note
-        )
+            const assetStats = await downloadAssets(board)
+            result.assets = assetStats
+        } catch (error) {
+            const message = error instanceof Error
+                ? error.message
+                : String(error)
+            console.error(`Error downloading assets for board ${result.boardId}:`, message)
+            result.error = `Asset download failed: ${message}`
+        }
     }
-    console.log('='.repeat(100))
+
+    return results
 }
 
+/* MARK: Flow */
 function printConfig() {
     const length = 30
     const line = '─'.repeat(60)
     console.log(line)
     console.log('Environment'.padEnd(length), dev ? 'development' : 'production')
+    console.log('Fetch data'.padEnd(length), noFetch ? 'skipped' : 'enabled')
     console.log('Download assets'.padEnd(length), noDownload ? 'skipped' : 'enabled')
     console.log(line)
 }
@@ -211,8 +253,7 @@ async function setupDataDir() {
 }
 
 async function createJsonFile(board: BoardShape) {
-    const fileName = `${board.boardId}.json`
-    const filePath = joinDataDir('board', fileName)
+    const filePath = joinDataDir('board', `${board.boardId}.json`)
     await fs.writeFile(filePath, JSON.stringify(board, null, 4))
 
     console.log(`─ Saved to ${filePath}`)
@@ -263,9 +304,9 @@ async function downloadAssets(board: BoardShape) {
                 await downloadFile(asset.publicUrl, dest)
                 downloadedCount++
                 process.stdout.write(`\r─── Progress: ${downloadedCount}/${toBeDownloadedCount} (${Math.round(downloadedCount / toBeDownloadedCount * 100)}%)`)
-            } catch (err) {
+            } catch (error) {
                 failedCount++
-                console.error(`\n─── Failed to download asset ${asset.assetId} (${asset.fileName}):`, err)
+                console.error(`\n─── Failed to download asset ${asset.assetId} (${asset.fileName}):`, error)
             }
         })
 
@@ -282,6 +323,33 @@ async function downloadAssets(board: BoardShape) {
     }
 }
 
+function printSummary(results: SeedResult[]) {
+    console.log('\n\nSummary:')
+    console.log('='.repeat(100))
+    console.log(
+        'Board ID'.padEnd(15) +
+        'Status'.padEnd(12) +
+        'Assets (Success/Fail/Total)'.padEnd(30) +
+        'Note'
+    )
+    console.log('─'.repeat(100))
+
+    for (const res of results) {
+        const status = res.status === 'success' ? '✅ Success' : '❌ Failed'
+        const assets = `${res.assets.downloaded}/${res.assets.failed}/${res.assets.total}`
+        const note = res.error || res.boardName || ''
+
+        console.log(
+            res.boardId.padEnd(15) +
+            status.padEnd(12) +
+            assets.padEnd(30) +
+            note
+        )
+    }
+    console.log('='.repeat(100))
+}
+
+/* MARK: Util */
 async function downloadFile(publicUrl: Asset['public_url'], destPath: string) {
     const res = await fetch(publicUrl)
     if (!res.ok) throw new Error(`Failed to fetch ${publicUrl}: ${res.statusText}`)
