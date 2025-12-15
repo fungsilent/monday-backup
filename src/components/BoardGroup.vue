@@ -26,7 +26,7 @@ const emit = defineEmits<{
 }>()
 
 const getSubitemColumns = (item: ItemShape) => {
-    const firstSubitem = item.subitems?.[0]
+    const firstSubitem = item.subItems?.[0]
     if (!firstSubitem) return []
     return firstSubitem.column.map(c => c.name)
 }
@@ -63,10 +63,7 @@ function close() {
                             />
                         </svg>
                     </span>
-                    <h2
-                        class="font-semibold text-lg"
-                        :style="{ color: group.name === 'Closed' ? '#10B981' : '#3B82F6' }"
-                    >
+                    <h2 class="font-semibold text-lg">
                         {{ group.name }}
                     </h2>
                 </div>
@@ -96,7 +93,7 @@ function close() {
 
                             <!-- Subitem Row -->
                             <tr
-                                v-if="item.subitems.length"
+                                v-if="item.subItems.length"
                                 class="bg-gray-100"
                             >
                                 <td
@@ -111,7 +108,7 @@ function close() {
                                             />
                                             <tbody class="divide-y divide-gray-100">
                                                 <TableRow
-                                                    v-for="subitem in item.subitems"
+                                                    v-for="subitem in item.subItems"
                                                     :key="subitem.itemId"
                                                     :blank="false"
                                                     :item="subitem"

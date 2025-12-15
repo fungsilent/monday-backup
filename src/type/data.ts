@@ -6,7 +6,7 @@ export type BoardShape = {
     groups: {
         groupId: string
         name: string
-        items: Array<BaseItemShape & { subitems: BaseItemShape[] }>
+        items: Array<BaseItemShape & { subItems: BaseItemShape[] }>
     }[]
 }
 
@@ -63,4 +63,4 @@ export type WorkspaceShape = {
 }
 export type GroupShape = BoardShape['groups'][number]
 export type ItemShape = GroupShape['items'][number]
-export type SubitemShape = ItemShape['subitems'][number]
+export type SubitemShape = ItemShape['subItems'][number]

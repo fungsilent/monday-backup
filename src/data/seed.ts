@@ -6,7 +6,7 @@ import { Readable } from 'node:stream'
 import { formatInTimeZone } from 'date-fns-tz'
 
 import { seedBoardIds } from '#src/data/board'
-import { isApiTokenValid, fetchBoardGroups, fetchBoardGroupItems } from '#src/data/fetch'
+import { isApiTokenValid, fetchBoardGroups, fetchBoardGroupItems, fetchBoardItemComments } from '#src/data/fetch'
 import { request } from '#src/util/fetch'
 
 import { joinDataDir } from '#src/util/path'
@@ -34,7 +34,7 @@ import type {
 type SeedResult = {
     boardId: string
     boardName?: string
-    status: 'success' | 'fail' | 'exist'
+    status: 'init' | 'success' | 'fail' | 'exist'
     error?: string
     assets: {
         total: number
@@ -50,7 +50,13 @@ const noFetch = process.argv.includes('--no-fetch')
 const noDownload = process.argv.includes('--no-download')
 
 const seedData = dev ? seedBoardIds.dev : seedBoardIds.prod
-const allBoardIds = Object.values(seedData).flatMap(boardIds => boardIds)
+
+const allBoardIds = Object.values(seedData).flatMap(workspace =>
+    workspace.boardIds.map(boardId => ({
+        boardId,
+        token: workspace.token,
+    }))
+)
 
 seed()
 
@@ -79,7 +85,7 @@ async function seed() {
     } else {
         console.log('\n🔵 Phase 1: Data fetching skipped.')
         // When skipping fetch, if existing JSON files then mark as success, otherwise mark as failed
-        for (const boardId of allBoardIds) {
+        for (const { boardId } of allBoardIds) {
             const result: SeedResult = {
                 boardId,
                 status: 'fail',
@@ -92,7 +98,7 @@ async function seed() {
                 await fs.access(filePath)
                 result.status = 'exist'
                 result.error = undefined
-            } catch { /* emptyg */ }
+            } catch { /* empty */ }
 
             results.push(result)
         }
@@ -114,22 +120,28 @@ async function seed() {
 async function fetchAndSaveBoardData() {
     const results: SeedResult[] = []
 
-    for (const boardId of allBoardIds) {
+    // Loop boards
+    for (const { boardId, token } of allBoardIds) {
         console.log(`Processing board: ${boardId}`)
+
+        const result: SeedResult = {
+            boardId,
+            status: 'success',
+            assets: { total: 0, skipped: 0, downloaded: 0, failed: 0 }
+        }
 
         try {
             // Fetch board groups
-            const boardInfo = await fetchBoardGroups(boardId)
+            const boardInfo = await fetchBoardGroups(boardId, token)
             if (!boardInfo) {
                 console.warn(`Board ${boardId} not found.`)
-                results.push({
-                    boardId,
-                    status: 'fail',
-                    error: 'Board not found',
-                    assets: { total: 0, skipped: 0, downloaded: 0, failed: 0 }
-                })
+                result.status = 'fail'
+                result.error = 'Board not found'
+                results.push(result)
                 continue
             }
+
+            result.boardName = boardInfo.name
 
             const targetBoard: BoardShape = {
                 boardId: boardInfo.id,
@@ -142,51 +154,92 @@ async function fetchAndSaveBoardData() {
             for (const group of boardInfo.groups) {
                 console.log(`─ Processing group: ${group.title} (${group.id})`)
 
-                const allItems: Item[] = []
+                const allGroupItems: ItemShape[] = []
                 let cursor: string | null = null
 
                 // Fetch group items until all items are fetched
                 do {
-                    const groupData = await fetchBoardGroupItems(boardId, group.id, cursor)
-                    allItems.push(...groupData.items_page.items)
+                    const groupData = await fetchBoardGroupItems(boardId, group.id, cursor, token)
+                    groupData.items_page.items.forEach(item => {
+                        allGroupItems.push({
+                            ...transformBaseItem(boardId, item),
+                            subItems: item.subitems.map(subitem => transformBaseItem(boardId, subitem))
+                        })
+                    })
                     cursor = groupData.items_page.cursor
                 } while (cursor)
+
+                // Fetch all comments
+                await promiseConcurrencyPool(allGroupItems, 20, async item => {
+                    try {
+                        const itemComments = await fetchItemComments(item.itemId, token)
+                        item.comments = transformComment(boardId, itemComments)
+                    } catch (error) {
+                        console.error(`Error fetching comments for item ${item.itemId}:`, error)
+                        result.status = 'fail'
+                        result.error = error instanceof Error
+                            ? error.message
+                            : String(error)
+                    }
+
+                    if (item.subItems) {
+                        await Promise.all(item.subItems.map(async subItem => {
+                            try {
+                                const subItemComments = await fetchItemComments(subItem.itemId, token)
+                                subItem.comments = transformComment(boardId, subItemComments)
+                            } catch (error) {
+                                console.error(`Error fetching comments for subitem ${item.itemId}-${subItem.itemId}:`, error)
+                                result.status = 'fail'
+                                result.error = error instanceof Error
+                                    ? error.message
+                                    : String(error)
+                            }
+                        }))
+                    }
+                })
 
                 targetBoard.groups.push({
                     groupId: group.id,
                     name: group.title,
-                    items: allItems.map(item => {
-                        return {
-                            ...transformBaseItem(boardId, item),
-                            subitems: item.subitems.map(subitem => transformBaseItem(boardId, subitem))
-                        }
-                    })
+                    items: allGroupItems
                 })
             }
 
             await createJsonFile(targetBoard)
 
-            results.push({
-                boardId,
-                boardName: boardInfo.name,
-                status: 'success',
-                assets: { total: 0, skipped: 0, downloaded: 0, failed: 0 }
-            })
-
+            results.push(result)
         } catch (error) {
             console.error(`Error processing board ${boardId}:`, error)
-            results.push({
-                boardId,
-                status: 'fail',
-                error: error instanceof Error
-                    ? error.message
-                    : String(error),
-                assets: { total: 0, skipped: 0, downloaded: 0, failed: 0 }
-            })
+            result.status = 'fail'
+            result.error = error instanceof Error
+                ? error.message
+                : String(error)
         }
+
+        results.push(result)
     }
 
     return results
+}
+
+async function fetchItemComments(itemId: Item['id'], token: string): Promise<Comment[]> {
+    const comments: Comment[] = []
+    const limit = 25
+    let page = 1
+    let hasMore = true
+
+    while (hasMore) {
+        const pageComments = await fetchBoardItemComments(itemId, page, token)
+
+        if (pageComments.length < limit) {
+            hasMore = false
+        }
+
+        comments.push(...pageComments)
+        page++
+    }
+
+    return comments
 }
 
 async function findAndDownloadAssets(results: SeedResult[]) {
@@ -240,11 +293,13 @@ async function setupDataDir() {
         // Clean board directory
         console.log('Cleaning board directory...')
         const jsonFiles = await fs.readdir(joinDataDir('board'))
+        const validBoardIds = allBoardIds.map(b => b.boardId)
+
         await Promise.all(jsonFiles.map(async jsonFile => {
             const boardId = jsonFile.split('.')[0]
             if (
                 !boardId
-                || !allBoardIds.includes(boardId)
+                || !validBoardIds.includes(boardId)
             ) {
                 console.log(`─ Deleted: ${jsonFile}`)
                 await fs.rm(joinDataDir('board', jsonFile), { recursive: true, force: true })
@@ -362,7 +417,7 @@ function printSummary(results: SeedResult[]) {
 async function downloadFile(publicUrl: Asset['public_url'], destPath: string) {
     const res = await request({
         url: publicUrl,
-        timeout: 10000,
+        timeout: 10 * 60 * 1000 // 10 minutes
     })
     if (!res.ok) throw new Error(`Failed to fetch ${publicUrl}: ${res.statusText}`)
     if (!res.body) throw new Error(`No body for ${publicUrl}`)
@@ -387,26 +442,30 @@ function transformBaseItem(boardId: Board['id'], item: BaseItem): BaseItemShape 
         updatedAt: item.updated_at,
         column: transformColumnValue(item.column_values),
         assets: item.assets.map(asset => transformAsset(boardId, asset)),
-        comments: item.updates.map(update => ({
-            commentId: update.id,
-            body: update.body,
-            formattedBody: transformBody(boardId, update),
-            edited_at: update.edited_at,
-            created_at: update.created_at,
-            updated_at: update.updated_at,
-            createdBy: update.creator?.name ?? 'Unknown',
-            assets: update.assets.map(asset => transformAsset(boardId, asset)),
-            replies: update.replies.map(reply => ({
-                replyId: reply.id,
-                body: reply.body,
-                formattedBody: transformBody(boardId, reply),
-                createdBy: reply.creator?.name ?? 'Unknown',
-                createdAt: reply.created_at,
-                updatedAt: reply.updated_at,
-                assets: reply.assets.map(asset => transformAsset(boardId, asset))
-            }))
-        })),
+        comments: [],
     }
+}
+
+function transformComment(boardId: Board['id'], updates: Comment[]): CommentShape[] {
+    return updates.map(update => ({
+        commentId: update.id,
+        body: update.body,
+        formattedBody: transformBody(boardId, update),
+        edited_at: update.edited_at,
+        created_at: update.created_at,
+        updated_at: update.updated_at,
+        createdBy: update.creator?.name ?? 'Unknown',
+        assets: update.assets.map(asset => transformAsset(boardId, asset)),
+        replies: update.replies.map(reply => ({
+            replyId: reply.id,
+            body: reply.body,
+            formattedBody: transformBody(boardId, reply),
+            createdBy: reply.creator?.name ?? 'Unknown',
+            createdAt: reply.created_at,
+            updatedAt: reply.updated_at,
+            assets: reply.assets.map(asset => transformAsset(boardId, asset))
+        }))
+    }))
 }
 
 function transformBody(

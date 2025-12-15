@@ -35,6 +35,36 @@ type GetBoardItemsResponse = {
     }[]
 }
 
+type GetBoardItemUpdatesResponse = {
+    items: {
+        id: string
+        updates: {
+            id: string
+            page: number
+            body: string
+            edited_at: string
+            created_at: string
+            updated_at: string
+            item_id: string
+            original_creation_date: string | null
+            text_body: string
+            creator: Creator | null
+            assets: Asset[]
+            replies: {
+                id: string
+                body: string
+                creator_id: string
+                edited_at: string
+                created_at: string
+                updated_at: string
+                text_body: string
+                creator: Creator | null
+                assets: Asset[]
+            }[]
+        }[]
+    }[]
+}
+
 export type BaseItem = {
     id: string
     name: string
@@ -50,35 +80,12 @@ export type BaseItem = {
         }
     }[]
     assets: Asset[]
-    updates: {
-        id: string
-        body: string
-        edited_at: string
-        created_at: string
-        updated_at: string
-        item_id: string
-        original_creation_date: string | null
-        text_body: string
-        creator: Creator | null
-        assets: Asset[]
-        replies: {
-            id: string
-            body: string
-            creator_id: string
-            edited_at: string
-            created_at: string
-            updated_at: string
-            text_body: string
-            creator: Creator | null
-            assets: Asset[]
-        }[]
-    }[]
 }
 
 export type Board = GetBoardItemsResponse['boards'][number]
 export type Group = Board['groups'][number]
 export type Item = Group['items_page']['items'][number]
-export type Comment = Item['updates'][number]
+export type Comment = GetBoardItemUpdatesResponse['items'][number]['updates'][number]
 export type Reply = Comment['replies'][number]
 
 export type Asset = {
@@ -104,13 +111,13 @@ export const isApiTokenValid = (): boolean => {
     return !!MONDAY_API_TOKEN
 }
 
-export const fetchGraphQL = async <T>(query: string, variables: Record<string, unknown> = {}): Promise<T> => {
+export const fetchGraphQL = async <T>(query: string, variables: Record<string, unknown> = {}, token: string): Promise<T> => {
     const response = await request({
         url: MONDAY_API_URL,
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': MONDAY_API_TOKEN || ''
+            'Authorization': token
         },
         body: JSON.stringify({ query, variables }),
         timeout,
@@ -121,14 +128,11 @@ export const fetchGraphQL = async <T>(query: string, variables: Record<string, u
     }
 
     const json = await response.json() as GraphQLResponse<T>
-    if (json.errors) {
-        throw new Error(`GraphQL Error: ${JSON.stringify(json.errors)}`)
-    }
     return json.data
 }
 
 /* Monday API */
-export const fetchBoardGroups = async (boardId: Board['id']): Promise<GetAllGroupResponse['boards'][number]> => {
+export const fetchBoardGroups = async (boardId: Board['id'], token: string): Promise<GetAllGroupResponse['boards'][number]> => {
     const query = `
         query ($boardIds: [ID!]) {
             boards(ids: $boardIds) {
@@ -142,7 +146,7 @@ export const fetchBoardGroups = async (boardId: Board['id']): Promise<GetAllGrou
             }
         }
     `
-    const data = await fetchGraphQL<GetAllGroupResponse>(query, { boardIds: [boardId] })
+    const data = await fetchGraphQL<GetAllGroupResponse>(query, { boardIds: [boardId] }, token)
     const board = data.boards?.[0]
     if (!board) {
         throw new Error(`Board ${boardId} not found.`)
@@ -150,10 +154,57 @@ export const fetchBoardGroups = async (boardId: Board['id']): Promise<GetAllGrou
     return board
 }
 
+const commentQuery = `
+    id
+    body
+    edited_at
+    created_at
+    updated_at
+    item_id
+    original_creation_date
+    text_body
+    creator {
+        id
+        name
+    }
+    assets {
+        id
+        created_at
+        file_extension
+        file_size
+        name
+        public_url
+        url
+    }
+    replies {
+        id
+        body
+        creator_id
+        edited_at
+        created_at
+        updated_at
+        text_body
+        creator {
+            id
+            name
+        }
+        assets {
+            id
+            created_at
+            file_extension
+            file_size
+            name
+            public_url
+            url
+        }
+    }
+`
+
 export const fetchBoardGroupItems = async (
     boardId: Board['id'],
     groupId: Group['id'],
-    cursor: Group['items_page']['cursor'] | null = null
+    cursor: Group['items_page']['cursor'] | null = null,
+    token: string
 ): Promise<Group> => {
     const limit = 100
     const itemQuery = `
@@ -182,51 +233,6 @@ export const fetchBoardGroupItems = async (
             public_url
             url
         }
-        updates {
-            id
-            body
-            edited_at
-            created_at
-            updated_at
-            item_id
-            original_creation_date
-            text_body
-            creator {
-                id
-                name
-            }
-            assets {
-                id
-                created_at
-                file_extension
-                file_size
-                name
-                public_url
-                url
-            }
-            replies {
-                id
-                body
-                creator_id
-                edited_at
-                created_at
-                updated_at
-                text_body
-                creator {
-                    id
-                    name
-                }
-                assets {
-                    id
-                    created_at
-                    file_extension
-                    file_size
-                    name
-                    public_url
-                    url
-                }
-            }
-        }
     `
 
     const query = `
@@ -248,10 +254,33 @@ export const fetchBoardGroupItems = async (
             }
         }
     `
-    const data = await fetchGraphQL<GetBoardItemsResponse>(query, { boardIds: [boardId], groupIds: [groupId], cursor })
+    const data = await fetchGraphQL<GetBoardItemsResponse>(query, {
+        boardIds: [boardId],
+        groupIds: [groupId],
+        cursor
+    }, token)
     const groups = data.boards?.[0]?.groups?.[0]
     if (!groups) {
         throw new Error(`Group ${groupId} not found.`)
     }
     return groups
+}
+
+export const fetchBoardItemComments = async (itemId: Item['id'], page: number, token: string): Promise<Comment[]> => {
+    const query = `
+        query ($ids: [ID!], $page: Int) {
+            items(ids: $ids) {
+                id
+                updates(limit: 25, page: $page) {
+                    ${commentQuery}
+                }
+            }
+        }
+    `
+    const data = await fetchGraphQL<GetBoardItemUpdatesResponse>(query, {
+        ids: [itemId],
+        page
+    }, token)
+    const comments = data.items?.[0]?.updates
+    return comments ?? []
 }

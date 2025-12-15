@@ -15,7 +15,7 @@ export async function promiseConcurrencyPool<T>(items: T[], limit: number, task:
     }
 
     // After all tasks are added to the pool, wait for all promises in the pool to complete
-    await Promise.all(pool)
+    await Promise.allSettled(pool)
 }
 
 type RequestOptions = RequestInit & {
@@ -24,16 +24,32 @@ type RequestOptions = RequestInit & {
 }
 
 export const request = async ({ url, timeout, ...options }: RequestOptions) => {
-    const controller = new AbortController()
+    let retry = 3
+    while (retry > 0) {
+        const controller = new AbortController()
+        let timeoutId: NodeJS.Timeout | undefined
 
-    if (timeout) {
-        setTimeout(() => {
-            controller.abort()
-        }, timeout)
+        if (timeout) {
+            timeoutId = setTimeout(() => {
+                controller.abort()
+            }, timeout)
+        }
+
+        try {
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal
+            })
+            return response
+        } catch (error) {
+            retry--
+            if (retry === 0) throw error
+            console.warn(`Request failed, retrying (${3 - retry}/3)... Error: ${error}`)
+        } finally {
+            if (timeout) {
+                clearTimeout(timeoutId)
+            }
+        }
     }
-
-    return await fetch(url, {
-        ...options,
-        signal: controller.signal
-    })
+    throw new Error('Unreachable')
 }
