@@ -40,6 +40,11 @@ export const request = async ({ url, timeout, ...options }: RequestOptions) => {
                 ...options,
                 signal: controller.signal
             })
+
+            if (!response.ok) {
+                throw new Error(`${response.status} ${response.statusText}`)
+            }
+
             return response
         } catch (error) {
             retry--
