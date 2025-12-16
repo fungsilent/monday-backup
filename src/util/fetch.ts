@@ -28,7 +28,7 @@ export const request = async <T>({ url, timeout, ...options }: AxiosRequestConfi
         try {
             const response = await axios<T>({
                 url,
-                timeout,
+                timeout: timeout ?? 3 * 60 * 1000, // 3 minutes
                 validateStatus: () => true, // Don't throw on error status codes automatically
                 ...options
             })
@@ -42,14 +42,20 @@ export const request = async <T>({ url, timeout, ...options }: AxiosRequestConfi
 
             return response.data
         } catch (error) {
+            retry--
+
             // Skip retry for 403 forbidden error
             if (error instanceof Error && error.message === 'Forbidden') {
                 throw new Error('Forbidden')
             }
 
-            retry--
             if (retry === 0) {
-                console.warn('[Request] Failed', url, error)
+                const message = axios.isAxiosError(error)
+                    ? error.message
+                    : error instanceof Error
+                        ? error.message
+                        : String(error)
+                console.warn('[Request] Failed', url, message)
                 throw error
             }
         }
