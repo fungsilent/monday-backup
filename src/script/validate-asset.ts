@@ -161,7 +161,7 @@ function printSummary(stats: Map<string, BoardStats>) {
                 name: stat.name,
                 totalAssets: stat.totalAssets.toString(),
                 errorCount: stat.errorCount,
-                rate: `${Math.max(Math.round((stat.errorCount / stat.totalAssets) * 100), 100)}%`,
+                rate: `${Math.round((stat.errorCount / stat.totalAssets) * 100)}%`,
             }
 
         console.log(
@@ -173,19 +173,19 @@ function printSummary(stats: Map<string, BoardStats>) {
         )
     })
 
-    console.log('─'.repeat(100))
-    let totalRate = '0%'
+    let totalRate = 0
     if (totalAssets > 0) {
-        totalRate = `${Math.round((totalErrors / totalAssets) * 100)}%`
+        totalRate = Math.round((totalErrors / totalAssets) * 100)
     } else if (totalErrors > 0) {
-        totalRate = '100%'
+        totalRate = 100
     }
 
+    console.log('─'.repeat(100))
     console.log(
         'TOTAL'.padEnd(45) +
         totalAssets.toString().padEnd(10) +
         totalErrors.toString().padEnd(10) +
-        totalRate
+        `${totalRate}%`.padEnd(10)
     )
     console.log('='.repeat(100))
 }

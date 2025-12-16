@@ -246,7 +246,6 @@ async function findAndDownloadAssets(results: SeedResult[]) {
         if (result.status === 'fail') continue
 
         try {
-            // Read the JSON file
             const filePath = joinDataDir('board', `${result.boardId}.json`)
             const fileContent = fs.readFileSync(filePath, 'utf-8')
             const board: BoardShape = JSON.parse(fileContent)
@@ -330,7 +329,7 @@ async function downloadAssets(board: BoardShape) {
     const validAssetFilenames = new Set(boardAssets.map(asset => assetFileName(asset)))
 
     // Cleanup obsolete files
-    await Promise.allSettled(localAssets.map(async file => {
+    await Promise.all(localAssets.map(async file => {
         if (!validAssetFilenames.has(file)) {
             fs.unlinkSync(joinDataDir('asset', board.boardId, file))
             console.log(`─── Deleted obsolete asset: ${file}`)
@@ -350,15 +349,27 @@ async function downloadAssets(board: BoardShape) {
             const dest = joinDataDir('asset', board.boardId, assetFileName(asset))
 
             if (fs.existsSync(dest)) {
-                count.skipped++
-                return
+                // Delete if size mismatch
+                const stat = fs.statSync(dest)
+                if (stat.size === asset.size) {
+                    count.skipped++
+                    return
+                }
+                fs.unlinkSync(dest)
             }
 
             try {
                 await downloadFile(asset.publicUrl, dest)
+
+                // Regarded as failed if size mismatch
+                const newStat = fs.statSync(dest)
+                if (newStat.size !== asset.size) {
+                    fs.unlinkSync(dest)
+                    throw new Error('File size mismatch')
+                }
+
                 count.downloaded++
 
-                // Only show progress for actual downloads
                 const progress = count.skipped + count.downloaded + count.failed
                 process.stdout.write(`\r─── Progress: ${progress} / ${totalAssets} (${Math.round(progress / totalAssets * 100)}%)`)
             } catch (error) {
