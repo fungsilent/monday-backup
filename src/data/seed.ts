@@ -1,5 +1,6 @@
 import 'dotenv/config'
-import fs from 'node:fs/promises'
+import fs from 'node:fs'
+
 import { createWriteStream } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
@@ -9,8 +10,9 @@ import { seedBoardIds } from '#src/data/board'
 import { isApiTokenValid, fetchBoardGroups, fetchBoardGroupItems, fetchBoardItemComments } from '#src/data/fetch'
 import { request } from '#src/util/fetch'
 
+import { downloadAssetMaxConcurrency, fetchBoardMaxConcurrency } from '#root/config'
 import { joinDataDir } from '#src/util/path'
-import { getAllAssets } from '#src/util/data'
+import { assetFileName, getAllAssets } from '#src/util/data'
 import { promiseConcurrencyPool } from '#src/util/fetch'
 
 import type { ReadableStream } from 'node:stream/web'
@@ -93,12 +95,11 @@ async function seed() {
                 assets: { total: 0, skipped: 0, downloaded: 0, failed: 0 }
             }
 
-            try {
-                const filePath = joinDataDir('board', `${boardId}.json`)
-                await fs.access(filePath)
+            const filePath = joinDataDir('board', `${boardId}.json`)
+            if (fs.existsSync(filePath)) {
                 result.status = 'exist'
                 result.error = undefined
-            } catch { /* empty */ }
+            }
 
             results.push(result)
         }
@@ -170,7 +171,7 @@ async function fetchAndSaveBoardData() {
                 } while (cursor)
 
                 // Fetch all comments
-                await promiseConcurrencyPool(allGroupItems, 20, async item => {
+                await promiseConcurrencyPool(allGroupItems, fetchBoardMaxConcurrency, async item => {
                     try {
                         const itemComments = await fetchItemComments(item.itemId, token)
                         item.comments = transformComment(boardId, itemComments)
@@ -247,7 +248,7 @@ async function findAndDownloadAssets(results: SeedResult[]) {
         try {
             // Read the JSON file
             const filePath = joinDataDir('board', `${result.boardId}.json`)
-            const fileContent = await fs.readFile(filePath, 'utf-8')
+            const fileContent = fs.readFileSync(filePath, 'utf-8')
             const board: BoardShape = JSON.parse(fileContent)
 
             const assetStats = await downloadAssets(board)
@@ -279,9 +280,9 @@ async function setupDataDir() {
     try {
         // Setup data directory
         console.log('Setting up data directory...')
-        await fs.mkdir(joinDataDir(), { recursive: true })
-        await fs.mkdir(joinDataDir('board'), { recursive: true })
-        await fs.mkdir(joinDataDir('asset'), { recursive: true })
+        fs.mkdirSync(joinDataDir(), { recursive: true })
+        fs.mkdirSync(joinDataDir('board'), { recursive: true })
+        fs.mkdirSync(joinDataDir('asset'), { recursive: true })
 
         if (!clean) {
             console.log('Skipping clean...')
@@ -290,17 +291,17 @@ async function setupDataDir() {
 
         // Clean board directory
         console.log('Cleaning board directory...')
-        const jsonFiles = await fs.readdir(joinDataDir('board'))
+        const jsonFiles = fs.readdirSync(joinDataDir('board'))
         const validBoardIds = allBoardIds.map(b => b.boardId)
 
-        await Promise.all(jsonFiles.map(async jsonFile => {
+        await Promise.allSettled(jsonFiles.map(async jsonFile => {
             const boardId = jsonFile.split('.')[0]
             if (
                 !boardId
                 || !validBoardIds.includes(boardId)
             ) {
                 console.log(`─ Deleted: ${jsonFile}`)
-                await fs.rm(joinDataDir('board', jsonFile), { recursive: true, force: true })
+                fs.rmSync(joinDataDir('board', jsonFile), { recursive: true, force: true })
             }
         }))
     } catch (error) {
@@ -311,7 +312,7 @@ async function setupDataDir() {
 
 async function createJsonFile(board: BoardShape) {
     const filePath = joinDataDir('board', `${board.boardId}.json`)
-    await fs.writeFile(filePath, JSON.stringify(board, null, 4))
+    fs.writeFileSync(filePath, JSON.stringify(board, null, 4))
 
     console.log(`─ Saved to ${filePath}`)
 }
@@ -319,19 +320,19 @@ async function createJsonFile(board: BoardShape) {
 async function downloadAssets(board: BoardShape) {
     console.log(`─ Downloading assets for board ${board.boardId}...`)
     const assetDir = joinDataDir('asset', board.boardId)
-    await fs.mkdir(assetDir, { recursive: true })
+    fs.mkdirSync(assetDir, { recursive: true })
 
     const boardAssets = getAllAssets(board)
     const totalAssets = boardAssets.length
 
     // Sync assets: Remove local assets that are not in the new list
-    const localAssets = await fs.readdir(assetDir).catch(() => [] as string[])
+    const localAssets = fs.readdirSync(assetDir)
     const validAssetFilenames = new Set(boardAssets.map(asset => assetFileName(asset)))
 
     // Cleanup obsolete files
-    await Promise.all(localAssets.map(async file => {
+    await Promise.allSettled(localAssets.map(async file => {
         if (!validAssetFilenames.has(file)) {
-            await fs.unlink(joinDataDir('asset', board.boardId, file))
+            fs.unlinkSync(joinDataDir('asset', board.boardId, file))
             console.log(`─── Deleted obsolete asset: ${file}`)
         }
     }))
@@ -345,18 +346,15 @@ async function downloadAssets(board: BoardShape) {
     }
 
     if (totalAssets) {
-        await promiseConcurrencyPool(boardAssets, 50, async asset => {
+        await promiseConcurrencyPool(boardAssets, downloadAssetMaxConcurrency, async asset => {
             const dest = joinDataDir('asset', board.boardId, assetFileName(asset))
 
-            try {
-                try {
-                    await fs.access(dest)
-                    count.skipped++
-                    return
-                } catch {
-                    // File does not exist, proceed to download
-                }
+            if (fs.existsSync(dest)) {
+                count.skipped++
+                return
+            }
 
+            try {
                 await downloadFile(asset.publicUrl, dest)
                 count.downloaded++
 
@@ -425,12 +423,6 @@ async function downloadFile(publicUrl: Asset['public_url'], destPath: string) {
 }
 
 /* MARK: Data */
-function assetFileName(asset: Asset | AssetShape): string {
-    return 'assetId' in asset
-        ? `${asset.assetId}${asset.extension}`
-        : `${asset.id}${asset.file_extension}`
-}
-
 function transformBaseItem(boardId: Board['id'], item: BaseItem): BaseItemShape {
     return {
         itemId: item.id,

@@ -5,7 +5,8 @@
     "type": "tsc --noEmit",
     "lint": "eslint src --fix",
     "seed": "tsx src/data/seed.ts",
-    "analyze": "tsx src/script/analyze-assets.ts",
+    "validate": "tsx src/script/validate-asset.ts",
+    "analyze": "tsx src/script/analyze-asset.ts",
     "dev": "nuxt dev",
     "build": "nuxt build"
   },

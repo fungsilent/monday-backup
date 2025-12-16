@@ -59,7 +59,6 @@ export const request = async ({ url, timeout, ...options }: RequestOptions) => {
             if (retry === 0) {
                 throw error
             }
-            console.warn(`Request failed, retrying (${3 - retry}/3)...`, error)
         } finally {
             if (timeout) {
                 clearTimeout(timeoutId)
