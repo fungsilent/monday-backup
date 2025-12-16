@@ -27,7 +27,7 @@ export default defineEventHandler(async event => {
         const assignedBoardIds = new Set<string>()
 
         Object.entries(workspaceIds).forEach(([workspaceName, ids]) => {
-            const boardsInWorkspace = allBoards.filter(b => ids.includes(b.boardId))
+            const boardsInWorkspace = allBoards.filter(b => ids.boardIds.includes(b.boardId))
             if (boardsInWorkspace.length) {
                 boardsInWorkspace.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                 workspaces.push({
