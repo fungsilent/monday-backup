@@ -206,8 +206,6 @@ async function fetchAndSaveBoardData() {
             }
 
             await createJsonFile(targetBoard)
-
-            results.push(result)
         } catch (error) {
             console.error(`Error processing board ${boardId}:`, error)
             result.status = 'fail'
@@ -390,7 +388,7 @@ function printSummary(results: SeedResult[]) {
     console.log(
         'Board ID'.padEnd(15) +
         'Status'.padEnd(12) +
-        'Assets (Success / Fail / Total)'.padEnd(30) +
+        'Assets (Total / Success / Fail)'.padEnd(40) +
         'Note'
     )
     console.log('─'.repeat(100))
@@ -400,13 +398,13 @@ function printSummary(results: SeedResult[]) {
         if (res.status === 'success') status = '✅ Success'
         if (res.status === 'exist') status = '📁 Exist'
 
-        const assets = `${res.assets.downloaded + res.assets.skipped} / ${res.assets.failed} / ${res.assets.total}`
+        const assets = `${res.assets.total} / ${res.assets.downloaded + res.assets.skipped} / ${res.assets.failed}`
         const note = res.error || res.boardName || ''
 
         console.log(
             res.boardId.padEnd(15) +
             status.padEnd(12) +
-            assets.padEnd(30) +
+            assets.padEnd(40) +
             note
         )
     }

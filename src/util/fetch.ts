@@ -42,14 +42,24 @@ export const request = async ({ url, timeout, ...options }: RequestOptions) => {
             })
 
             if (!response.ok) {
+                if (response.status === 403) {
+                    throw new Error('Forbidden')
+                }
                 throw new Error(`${response.status} ${response.statusText}`)
             }
 
             return response
         } catch (error) {
+            // Skip retry for 403 forbidden error
+            if (error instanceof Error && error.message === 'Forbidden') {
+                throw new Error('Forbidden')
+            }
+
             retry--
-            if (retry === 0) throw error
-            console.warn(`Request failed, retrying (${3 - retry}/3)... Error: ${error}`)
+            if (retry === 0) {
+                throw error
+            }
+            console.warn(`Request failed, retrying (${3 - retry}/3)...`, error)
         } finally {
             if (timeout) {
                 clearTimeout(timeoutId)
