@@ -3,7 +3,6 @@ import fs from 'node:fs'
 
 import { createWriteStream } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
-import { Readable } from 'node:stream'
 import { formatInTimeZone } from 'date-fns-tz'
 
 import { seedBoardIds } from '#src/data/board'
@@ -428,15 +427,14 @@ function printSummary(results: SeedResult[]) {
 
 /* MARK: Util */
 async function downloadFile(publicUrl: Asset['public_url'], destPath: string) {
-    const res = await request({
+    const data = await request<ReadableStream>({
         url: publicUrl,
-        timeout: 10 * 60 * 1000 // 10 minutes
+        responseType: 'stream',
+        timeout: 5 * 60 * 1000 // 5 minutes
     })
-    if (!res.ok) throw new Error(`Failed to fetch ${publicUrl}: ${res.statusText}`)
-    if (!res.body) throw new Error(`No body for ${publicUrl}`)
 
     const fileStream = createWriteStream(destPath)
-    await pipeline(Readable.fromWeb(res.body as ReadableStream), fileStream)
+    await pipeline(data, fileStream)
 }
 
 /* MARK: Data */

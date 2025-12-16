@@ -5,7 +5,6 @@ import { request } from '#src/util/fetch'
 /* API */
 type GraphQLResponse<T> = {
     data: T
-    errors?: unknown[]
 }
 
 type GetAllGroupResponse = {
@@ -112,23 +111,18 @@ export const isApiTokenValid = (): boolean => {
 }
 
 export const fetchGraphQL = async <T>(query: string, variables: Record<string, unknown> = {}, token: string): Promise<T> => {
-    const response = await request({
+    const response = await request<GraphQLResponse<T>>({
         url: MONDAY_API_URL,
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': token
         },
-        body: JSON.stringify({ query, variables }),
+        data: JSON.stringify({ query, variables }),
         timeout,
     })
 
-    if (!response.ok) {
-        throw new Error(`API Error: ${response.status} ${response.statusText}`)
-    }
-
-    const json = await response.json() as GraphQLResponse<T>
-    return json.data
+    return response.data
 }
 
 /* Monday API */

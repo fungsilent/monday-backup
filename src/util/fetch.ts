@@ -1,3 +1,7 @@
+import axios from 'axios'
+
+import type { AxiosRequestConfig } from 'axios'
+
 export async function promiseConcurrencyPool<T>(items: T[], limit: number, task: (item: T) => Promise<void>) {
     const pool = new Set<Promise<void>>()
 
@@ -18,37 +22,25 @@ export async function promiseConcurrencyPool<T>(items: T[], limit: number, task:
     await Promise.allSettled(pool)
 }
 
-type RequestOptions = RequestInit & {
-    url: string
-    timeout?: number
-}
-
-export const request = async ({ url, timeout, ...options }: RequestOptions) => {
+export const request = async <T>({ url, timeout, ...options }: AxiosRequestConfig) => {
     let retry = 3
     while (retry > 0) {
-        const controller = new AbortController()
-        let timeoutId: NodeJS.Timeout | undefined
-
-        if (timeout) {
-            timeoutId = setTimeout(() => {
-                controller.abort()
-            }, timeout)
-        }
-
         try {
-            const response = await fetch(url, {
-                ...options,
-                signal: controller.signal
+            const response = await axios<T>({
+                url,
+                timeout,
+                validateStatus: () => true, // Don't throw on error status codes automatically
+                ...options
             })
 
-            if (!response.ok) {
+            if (response.status !== 200) {
                 if (response.status === 403) {
                     throw new Error('Forbidden')
                 }
                 throw new Error(`${response.status} ${response.statusText}`)
             }
 
-            return response
+            return response.data
         } catch (error) {
             // Skip retry for 403 forbidden error
             if (error instanceof Error && error.message === 'Forbidden') {
@@ -57,13 +49,11 @@ export const request = async ({ url, timeout, ...options }: RequestOptions) => {
 
             retry--
             if (retry === 0) {
+                console.warn('[Request] Failed', url, error)
                 throw error
-            }
-        } finally {
-            if (timeout) {
-                clearTimeout(timeoutId)
             }
         }
     }
+
     throw new Error('Unreachable')
 }
