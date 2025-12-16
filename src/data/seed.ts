@@ -344,6 +344,12 @@ async function downloadAssets(board: BoardShape) {
         failed: 0,
     }
 
+    const updateProgress = () => {
+        const progress = count.skipped + count.downloaded + count.failed
+        const rate = Math.round(progress / totalAssets * 100)
+        process.stdout.write(`\r─── Progress: ${progress} / ${totalAssets} (${rate}%)`)
+    }
+
     if (totalAssets) {
         await promiseConcurrencyPool(boardAssets, downloadAssetMaxConcurrency, async asset => {
             const dest = joinDataDir('asset', board.boardId, assetFileName(asset))
@@ -353,6 +359,7 @@ async function downloadAssets(board: BoardShape) {
                 const stat = fs.statSync(dest)
                 if (stat.size === asset.size) {
                     count.skipped++
+                    updateProgress()
                     return
                 }
                 fs.unlinkSync(dest)
@@ -369,12 +376,11 @@ async function downloadAssets(board: BoardShape) {
                 }
 
                 count.downloaded++
-
-                const progress = count.skipped + count.downloaded + count.failed
-                process.stdout.write(`\r─── Progress: ${progress} / ${totalAssets} (${Math.round(progress / totalAssets * 100)}%)`)
+                updateProgress()
             } catch (error) {
                 count.failed++
                 console.error(`\n─── Failed to download asset ${asset.assetId} (${asset.fileName}):`, error)
+                updateProgress()
             }
         })
 
