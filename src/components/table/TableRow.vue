@@ -30,8 +30,9 @@ const emit = defineEmits<{
                     : 'px-6 py-4 text-gray-900 min-w-[400px] max-w-[600px] sticky left-0 z-10 bg-white group-hover/row:bg-blue-50 shadow-[1px_0_0_0_#f3f4f6,inset_-1px_0_0_0_#f3f4f6]'
             ]"
         >
-            <div :class="blank ? 'flex items-center gap-2' : ''">
-                {{ item.title }}
+            <div :class="blank ? 'flex items-center gap-2' : 'flex items-center gap-3'">
+                <span class="text-xs text-gray-400 font-mono">{{ item.itemId }}</span>
+                <span>{{ item.title }}</span>
             </div>
         </td>
 

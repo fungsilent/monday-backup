@@ -101,6 +101,15 @@ onUnmounted(() => {
                                 Item Details
                             </h3>
                             <div class="space-y-3">
+                                <div class="group bg-white p-3 rounded-lg border border-gray-100 shadow-sm hover:border-blue-200 hover:shadow-md transition-all duration-200">
+                                    <div class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                                        Item ID
+                                    </div>
+                                    <div class="text-sm text-gray-400 font-medium break-words leading-relaxed font-mono">
+                                        {{ item.itemId }}
+                                    </div>
+                                </div>
+
                                 <div
                                     v-for="col in item.column"
                                     :key="col.name"
