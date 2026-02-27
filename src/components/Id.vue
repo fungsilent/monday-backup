@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useCopy } from '#src/composables/useCopy'
+
 defineProps<{
     id: string
 }>()

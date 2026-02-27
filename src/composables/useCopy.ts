@@ -1,3 +1,5 @@
+import { useToast } from '#src/composables/useToast'
+
 export const useCopy = () => {
     const { showToast } = useToast()
 

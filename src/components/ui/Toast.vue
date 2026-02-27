@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useToast } from '#src/composables/useToast'
+
 const { toasts, removeToast } = useToast()
 
 const getToastClasses = (type: string) => {
