@@ -16,7 +16,7 @@ const props = defineProps<{
 const columns = computed(() => {
     const firstItem = props.group.items[0]
     if (!firstItem) return []
-    return firstItem.column.map(c => c.name)
+    return ['Item ID', ...firstItem.column.map(c => c.name)]
 })
 
 const detailsRef = ref<HTMLDetailsElement>()
@@ -28,7 +28,7 @@ const emit = defineEmits<{
 const getSubitemColumns = (item: ItemShape) => {
     const firstSubitem = item.subItems?.[0]
     if (!firstSubitem) return []
-    return firstSubitem.column.map(c => c.name)
+    return ['Item ID', ...firstSubitem.column.map(c => c.name)]
 }
 
 function open() {

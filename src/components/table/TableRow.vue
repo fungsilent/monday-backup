@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Id from '#root/src/components/Id.vue'
 import type { BaseItemShape } from '#src/type/data'
 
 defineProps<{
@@ -31,7 +32,7 @@ const emit = defineEmits<{
             ]"
         >
             <div :class="blank ? 'flex items-center gap-2' : 'flex items-center gap-3'">
-                <span class="text-xs text-gray-400 font-mono">{{ item.itemId }}</span>
+                <Id :id="item.itemId" />
                 <span>{{ item.title }}</span>
             </div>
         </td>

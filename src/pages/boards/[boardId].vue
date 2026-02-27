@@ -138,9 +138,7 @@ const collapseAll = () => {
                         <div>
                             <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-3">
                                 {{ board.name }}
-                                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100 font-mono">
-                                    {{ board.boardId }}
-                                </span>
+                                <Id :id="board.boardId" />
                             </h1>
                             <p class="text-sm text-gray-500 mt-1">
                                 {{ board.groups.length }} Groups • {{ board.groups.reduce((acc, g) => acc + g.items.length, 0) }} Items
