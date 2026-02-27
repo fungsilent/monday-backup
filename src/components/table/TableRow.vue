@@ -14,6 +14,7 @@ const emit = defineEmits<{
 
 <template>
     <tr
+        :data-item-id="item.itemId"
         :class="[
             'cursor-pointer transition-colors',
             blank

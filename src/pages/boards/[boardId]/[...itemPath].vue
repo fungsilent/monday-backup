@@ -6,6 +6,8 @@ import type { BaseItemShape, BoardShape } from '#src/type/data'
 
 const route = useRoute()
 const boardId = route.params.boardId as string
+const rawItemPath = route.params.itemPath
+const itemPath = Array.isArray(rawItemPath) ? rawItemPath : rawItemPath ? [rawItemPath] : []
 
 const { data: board, pending, error } = await useFetch<BoardShape>(`/api/boards/${boardId}`)
 
@@ -13,14 +15,84 @@ const searchQuery = ref('')
 const selectedItem = ref<BaseItemShape | null>(null)
 const boardGroupsRef = ref<InstanceType<typeof BoardGroup>[] | null>(null)
 
-// Filter items based on search query
+const basePath = `/boards/${boardId}`
+
+const findItemById = (itemId: string): BaseItemShape | null => {
+    if (!board.value) return null
+    for (const group of board.value.groups) {
+        const found = group.items.find(item => item.itemId === itemId)
+        if (found) return found
+    }
+    return null
+}
+
+const findSubItemById = (subItemId: string, parentItemId?: string): BaseItemShape | null => {
+    if (!board.value) return null
+    for (const group of board.value.groups) {
+        for (const item of group.items) {
+            if (parentItemId && item.itemId !== parentItemId) continue
+            const found = item.subItems.find(sub => sub.itemId === subItemId)
+            if (found) return found
+        }
+    }
+    return null
+}
+
+const findParentItemId = (subItemId: string): string | null => {
+    if (!board.value) return null
+    for (const group of board.value.groups) {
+        for (const item of group.items) {
+            if (item.subItems.some(sub => sub.itemId === subItemId)) {
+                return item.itemId
+            }
+        }
+    }
+    return null
+}
+
+const isTopLevelItem = (itemId: string): boolean => {
+    if (!board.value) return false
+    return board.value.groups.some(g => g.items.some(item => item.itemId === itemId))
+}
+
+const replaceUrl = (path: string): void => {
+    if (import.meta.client) {
+        window.history.replaceState({}, '', path)
+    }
+}
+
+const scrollToItem = (itemId: string): void => {
+    nextTick(() => {
+        const row = document.querySelector<HTMLElement>(`[data-item-id="${itemId}"]`)
+        row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+}
+
+const selectItem = (item: BaseItemShape): void => {
+    selectedItem.value = item
+    scrollToItem(item.itemId)
+
+    if (isTopLevelItem(item.itemId)) {
+        replaceUrl(`${basePath}/${item.itemId}`)
+    } else {
+        const parentId = findParentItemId(item.itemId)
+        if (parentId) {
+            replaceUrl(`${basePath}/${item.itemId}/${parentId}`)
+        }
+    }
+}
+
+const clearSelectedItem = (): void => {
+    selectedItem.value = null
+    replaceUrl(basePath)
+}
+
 const filteredGroups = computed(() => {
     if (!board.value) return []
     if (!searchQuery.value) return board.value.groups
 
     const query = searchQuery.value.toLowerCase()
 
-    // Support search by ID (e.g., "id:123456")
     if (query.startsWith('id:')) {
         const id = query.slice(3).trim()
         if (!id) return board.value.groups
@@ -37,10 +109,8 @@ const filteredGroups = computed(() => {
         .map(group => ({
             ...group,
             items: group.items.filter(item => {
-            // Search in title
                 if (item.title.toLowerCase().includes(query)) return true
 
-                // Search in columns
                 return item.column.some(col =>
                     col.value && col.value.toLowerCase().includes(query)
                 )
@@ -49,20 +119,41 @@ const filteredGroups = computed(() => {
         .filter(group => !!group.items.length)
 })
 
-const selectItem = (item: BaseItemShape) => {
-    selectedItem.value = item
-}
-
-const clearSelectedItem = () => {
-    selectedItem.value = null
-}
-
 const expandAll = () => {
     boardGroupsRef.value?.forEach(group => group.open())
 }
 
 const collapseAll = () => {
     boardGroupsRef.value?.forEach(group => group.close())
+}
+
+// Open modal from URL on initial load
+if (board.value && itemPath.length > 0) {
+    let found = false
+
+    const [first, second] = itemPath
+
+    if (first && !second) {
+        const item = findItemById(first)
+        if (item) {
+            selectedItem.value = item
+            found = true
+        }
+    } else if (first && second) {
+        const subItem = findSubItemById(first, second)
+        if (subItem) {
+            selectedItem.value = subItem
+            found = true
+        }
+    }
+
+    if (!found) {
+        await navigateTo(basePath, { replace: true })
+    }
+
+    if (found && selectedItem.value) {
+        onMounted(() => scrollToItem(selectedItem.value!.itemId))
+    }
 }
 </script>
 
